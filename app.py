@@ -291,19 +291,18 @@ if "step" not in ss:
     ss.box_pad = 12
 
 # ---------------- Pastel Theme CSS (Mobile-fixed) ----------------
-st.markdown("""
-# Force Streamlit to stay in Bello Foyer pastel light theme (fix for mobile Safari)
-st.markdown("""
+# ---- Bello Foyer pastel light theme (mobile safe) ----
+def inject_bello_theme():
+    st.markdown(
+        """
 <style>
+/* Force light, pastel background across desktop & mobile */
 html, body, [data-testid="stAppViewContainer"] {
     background-color: #fff8f9 !important;
     color-scheme: light !important;
 }
-:root {
-    color-scheme: light;
-}
 
-/* Global Input + Select + Textarea */
+/* Inputs + buttons */
 input, select, textarea, .stFileUploader, .stButton>button {
     background-color: #ffffff !important;
     color: #2d3436 !important;
@@ -311,21 +310,21 @@ input, select, textarea, .stFileUploader, .stButton>button {
     border: 1px solid #dcdcdc !important;
 }
 
-/* Green Bello Foyer buttons */
-.stButton>button {
+/* Primary buttons */
+.stButton > button {
     background-color: #2d6a4f !important;
-    color: white !important;
+    color: #ffffff !important;
     font-weight: 600 !important;
     border: none !important;
     padding: 0.6rem 1rem !important;
     border-radius: 8px !important;
-    transition: all 0.2s ease-in-out !important;
+    transition: background-color 0.2s ease-in-out !important;
 }
-.stButton>button:hover {
+.stButton > button:hover {
     background-color: #1e4934 !important;
 }
 
-/* File uploader box */
+/* File uploader card */
 [data-testid="stFileUploader"] {
     background-color: #ffffff !important;
     border-radius: 10px !important;
@@ -333,15 +332,19 @@ input, select, textarea, .stFileUploader, .stButton>button {
     padding: 1rem !important;
 }
 
-/* Enforce light mode even if device dark theme */
+/* Enforce light mode even if device prefers dark */
 @media (prefers-color-scheme: dark) {
-    html, body {
-        background-color: #fff8f9 !important;
-        color: #2d3436 !important;
-    }
+  html, body {
+    background-color: #fff8f9 !important;
+    color: #2d3436 !important;
+  }
 }
 </style>
-""", unsafe_allow_html=True)
+        """,
+        unsafe_allow_html=True,
+    )
+
+inject_bello_theme()
 
 # ---------------- Step 0: Welcome ----------------
 if ss.step == 0:
