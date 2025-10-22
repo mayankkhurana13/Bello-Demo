@@ -96,15 +96,6 @@ def generate_customer_profile(style_tags: List[str]) -> str:
 
 @st.cache_data
 def analyze_room_architecture(image_bytes: bytes) -> str:
-    b64 = base64.b64encode(image_bytes).decode("utf-8")
-    try:
-        resp = client.chat.completions.create( model="gpt-4o", messages=[{"role": "user", "content": [ {"type": "text", "text": "Analyze permanent architectural features (layout, floor, windows, doors, lights). Ignore furniture/decor. Be concise (2-3 sentences max)."}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}} ]}], max_tokens=150)
-        message = resp.choices[0].message
-        return message.content.strip() if message and message.content else "Could not analyze room features."
-    except Exception as e: print(f"Room Analysis Error: {e}"); return "Analysis unavailable."
-
-@st.cache_data
-def analyze_room_architecture(image_bytes: bytes) -> str:
     """Use vision to describe fixed architectural features only.
        Raises ValueError if the image is not recognized as a suitable room view."""
     b64 = base64.b64encode(image_bytes).decode("utf-8")
@@ -123,18 +114,32 @@ def analyze_room_architecture(image_bytes: bytes) -> str:
         elif message_content.startswith("Confirmation: Yes"):
             # Return the analysis part (everything after the first line)
             analysis = message_content.split('\n', 1)[1].strip() if '\n' in message_content else "Basic room features identified."
-            return analysis
+            # Handle empty analysis after confirmation
+            return analysis if analysis else "Basic room features identified."
         else:
             # If the model didn't follow instructions, treat as unclear
              print("Warning: AI did not provide clear confirmation. Assuming it's not a room.")
-             raise ValueError("Unable to see the room, please try a wider angle.")
+             raise ValueError("Unable to clearly identify a room, please try a wider angle.")
 
     except ValueError as ve: # Re-raise the specific error
         raise ve
     except Exception as e:
         print(f"Room Analysis Error: {e}")
         # Return a generic failure message that is *not* the specific user error
-        return "Analysis failed due to an unexpected error."
+        raise RuntimeError("Analysis failed due to an unexpected error.") from e # Raise runtime error instead
+
+# ***** ENSURE THIS FUNCTION DEFINITION IS PRESENT *****
+@st.cache_data
+def create_design_brief(profile: str, scene_report: str) -> str:
+    """Turn style + fixed architecture into a photoreal brief that gpt-image-1 understands."""
+    try:
+        resp = client.chat.completions.create( model="gpt-4o", messages=[ {"role": "system", "content": "You are a world-class interior designer. Produce a single-paragraph brief."}, {"role": "user", "content": f"Create a photorealistic brief starting with 'A photorealistic professional photograph of...'. Keep ALL architecture (walls, floor, ceiling, windows, doors, layout, fixed lights) EXACTLY the same. Only change MOVABLE items (furniture, rugs, decor, art, plants). Make no structural changes. \n\nUser Style Preference: {profile}\n\nScene Report (Unchangeable Structure): {scene_report}" }], max_tokens=700)
+        brief = resp.choices[0].message.content.strip()
+        brief += "\n\nIMPORTANT: Fit scale/perspective exactly. Place items only in transparent mask area. Do not change architecture."
+        return brief
+    except Exception as e: print(f"Design Brief Error: {e}"); return f"A photorealistic professional photograph of a room matching the user's taste: {profile}. Architecture must remain identical."
+# ***** END OF create_design_brief definition *****
+
 def edit_room_image_with_brief(processed_png_bytes: bytes, brief: str) -> str:
     img_io = io.BytesIO(processed_png_bytes); img_io.name = "input.png"
     mask_bytes = make_architecture_preserving_mask((1024, 1024)); mask_io = io.BytesIO(mask_bytes); mask_io.name = "mask.png"
@@ -204,11 +209,9 @@ if "step" not in ss:
 
 # --------------------- Main App Container / UI Logic ---------------------
 
-# Pre-calculate splash background URL
-splash_bg_url = data_url("assets/splash_background.jpg") or ""
-
 # Inject CSS globally first, before conditional rendering
-# Escape all literal curly braces in CSS with {{ }}
+# Pre-calculate splash background URL outside f-string
+splash_bg_url_css = data_url("assets/splash_background.jpg") or ""
 st.markdown(f"""
 <style>
     /* Base styles */
@@ -226,8 +229,8 @@ st.markdown(f"""
          display: {'flex' if ss.step == 0 else 'block'};
          justify-content: {'center' if ss.step == 0 else 'flex-start'};
          align-items: {'center' if ss.step == 0 else 'stretch'};
-         background-image: {'url("'+splash_bg_url+'")' if ss.step == 0 and splash_bg_url else 'none'};
-         background-color: {'transparent' if ss.step == 0 and splash_bg_url else ('#EADEE0' if ss.step == 0 else 'transparent')}; /* Fallback color */
+         background-image: {'url("'+splash_bg_url_css+'")' if ss.step == 0 and splash_bg_url_css else 'none'};
+         background-color: {'transparent' if ss.step == 0 and splash_bg_url_css else ('#EADEE0' if ss.step == 0 else 'transparent')}; /* Fallback color */
          background-size: cover; background-position: center;
     }}
     .splash-logo {{ max-width: 250px; animation: fadeIn 1.5s ease-in-out; }}
@@ -274,7 +277,7 @@ st.markdown(f"""
     /* Button Styles */
     .stButton>button {{ background:#2d6a4f; border-radius: 8px; color: white; padding: 0.7rem 1.1rem; border: none; font-weight: bold; transition: background-color 0.2s; }}
     .stButton>button:hover {{ background: #1e4934; filter: brightness(110%); }}
-    .stButton>button:disabled {{ background: #adb5bd; color: #6c757d; cursor: not-allowed; opacity: 0.7; }} /* Fixed: Use 0.7 */
+    .stButton>button:disabled {{ background: #adb5bd; color: #6c757d; cursor: not-allowed; opacity: 0.7; }}
     .stButton>button[kind="secondary"] {{ background:#e9ecef; color:#343a40; }}
     .stButton>button[kind="secondary"]:hover {{ background: #ced4da; }}
     .stButton>button[key*="remove_"] {{ background: none; color: #dc3545; padding: 0.1rem 0.4rem; font-size: 1rem; border: none; box-shadow: none; line-height: 1; }}
@@ -412,39 +415,13 @@ else:
                  tags: List[str] = []; [tags.extend(ss.quiz_choices[k]) for k in sorted(ss.quiz_choices.keys()) if ss.quiz_choices[k]]
                  ss.customer_profile = generate_customer_profile(tags or ["modern"])
                  if not ss.customer_profile or "(Default due to error)" in ss.customer_profile or "Could not generate profile" in ss.customer_profile: raise ValueError("Invalid profile.")
-
-            # --- AI Steps ---
-            with status_placeholder, st.spinner("⏳ Analyzing room..."):
-                scene = analyze_room_architecture(img_bytes) # This might raise ValueError now
-
-            with status_placeholder, st.spinner("🎨 Creating brief..."):
-                 # Check if analysis failed generically before proceeding
-                 if "Analysis failed" in scene or "Analysis unavailable" in scene :
-                      raise RuntimeError("Room analysis failed, cannot create brief.")
-                 brief = create_design_brief(ss.customer_profile, scene)
-
-            with status_placeholder, st.spinner("🖼️ Preprocessing..."):
-                 png_bytes = preprocess_to_square_png(img_bytes)
-
-            with status_placeholder, st.spinner("✨ Generating design... (~30-60s)"):
-                 ss.styled_image_url = edit_room_image_with_brief(png_bytes, brief)
-
-            # --- Success ---
+            with status_placeholder, st.spinner("⏳ Analyzing room..."): scene = analyze_room_architecture(img_bytes)
+            with status_placeholder, st.spinner("🎨 Creating brief..."): brief = create_design_brief(ss.customer_profile, scene)
+            with status_placeholder, st.spinner("🖼️ Preprocessing..."): png_bytes = preprocess_to_square_png(img_bytes)
+            with status_placeholder, st.spinner("✨ Generating design... (~30-60s)"): ss.styled_image_url = edit_room_image_with_brief(png_bytes, brief)
             status_placeholder.success("✅ Done!"); time.sleep(1)
             ss.last_error = None; ss.step = 6; st.rerun()
-
-        except ValueError as ve:
-             # Catch the specific error from analyze_room_architecture
-             ss.last_error = str(ve) # Store the user-friendly message
-             ss.styled_image_url = None
-             ss.step = 6 # Go to results to show this specific error
-             st.rerun()
-        except Exception as e:
-            # Catch all other unexpected errors
-            ss.last_error = f"An unexpected error occurred: {e}"
-            ss.styled_image_url = None;
-            ss.step = 6;
-            st.rerun() # Go to results to show the generic error
+        except Exception as e: ss.last_error = str(e); ss.styled_image_url = None; ss.step = 6; st.rerun() # Go to results to show error
 
     elif ss.step == 6:
         st.markdown("<h2 style='text-align:center;'>Your AI-Styled Home</h2>", unsafe_allow_html=True)
