@@ -105,7 +105,7 @@ def edge_lock_mask(img: Image.Image, thickness_px: int = 6, canny1: int = 80, ca
 def boxes_mask(img: Image.Image, boxes: List[Dict], pad_px: int = 12, blur_px: int = 6) -> Image.Image:
     w, h = img.size
     base = Image.new("L", (w, h), 255)  # opaque/locked
-    draw = ImageDraw.Draw(base)
+    draw = ImageDraw.Drawbase)
     for b in boxes:
         x0 = max(0, int(b["x"] * w) - pad_px)
         y0 = max(0, int(b["y"] * h) - pad_px)
@@ -296,10 +296,11 @@ def inject_bello_theme():
     st.markdown(
         """
 <style>
-/* Force light, pastel background across desktop & mobile */
-html, body, [data-testid="stAppViewContainer"] {
+/* Force light, pastel background AND dark text */
+html, body, [data-testid="stAppViewContainer"], .stApp {
     background-color: #fff8f9 !important;
     color-scheme: light !important;
+    color: #2d3436 !important; /* <<< CHANGED: Added to fix invisible text on dark mode */
 }
 
 /* Inputs + buttons */
@@ -312,7 +313,7 @@ input, select, textarea, .stFileUploader, .stButton>button {
 
 /* Primary buttons */
 .stButton > button {
-    background-color: #9dbfa5 !important; /* <<< CHANGED from dark green to soft sage */
+    background-color: #2d3436 !important; /* <<< CHANGED: Back to dark grey for consistency */
     color: #ffffff !important;
     font-weight: 600 !important;
     border: none !important;
@@ -321,7 +322,7 @@ input, select, textarea, .stFileUploader, .stButton>button {
     transition: background-color 0.2s ease-in-out !important;
 }
 .stButton > button:hover {
-    background-color: #8aa891 !important; /* <<< CHANGED from dark green to darker soft sage */
+    background-color: #4a5457 !important; /* <<< CHANGED: Darker hover for consistency */
 }
 
 /* File uploader card */
@@ -336,7 +337,7 @@ input, select, textarea, .stFileUploader, .stButton>button {
 @media (prefers-color-scheme: dark) {
   html, body {
     background-color: #fff8f9 !important;
-    color: #2d3436 !important;
+    color: #2d3436 !important; /* <<< CHANGED: Added to fix invisible text */
   }
 }
 </style>
@@ -352,21 +353,13 @@ if ss.step == 0:
     if os.path.exists(logo_path):
         st.image(logo_path, width=180)
     else:
-        st.markdown("<h1 style='color:#9dbfa5;'>Bello Foyer</h1>", unsafe_allow_html=True) # <<< CHANGED from dark green
+        st.markdown("<h1 style='color:#2d3436;'>Bello Foyer</h1>", unsafe_allow_html=True) # <<< CHANGED: color to match button
 
     intro_video = "assets/intro.mp4"
     if os.path.exists(intro_video):
-        with open(intro_video, "rb") as f:
-            video_b64 = base64.b64encode(f.read()).decode("utf-8")
-        st.markdown(
-            f"""
-            <video autoplay muted playsinline loop>
-              <source src="data:video/mp4;base64,{video_b64}" type="video/mp4" />
-            </video>
-            """,
-            unsafe_allow_html=True
-        )
-
+        # <<< CHANGED: Replaced inefficient Base64 method with st.video for fast loading
+        st.video(intro_video, loop=True)
+        
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("Get Started", type="primary", use_container_width=True):
         ss.step = 1
@@ -395,116 +388,4 @@ elif ss.step == 1:
         ss.mask_blur = st.slider("Mask feather (px)", 2, 16, ss.mask_blur, step=1)
         ss.edge_thick = st.slider("Edge lock thickness (px)", 2, 18, ss.edge_thick, step=1)
         ss.canny1 = st.slider("Canny threshold 1", 20, 200, ss.canny1, step=10)
-        ss.canny2 = st.slider("Canny threshold 2", 40, 300, ss.canny2, step=10)
-
-    if ss.upload and st.button("Generate Design", type="primary", use_container_width=True):
-        ss.step = 2
-        st.rerun()
-
-# ---------------- Step 2: Processing ----------------
-elif ss.step == 2:
-    if not ss.upload:
-        st.warning("Please upload a room photo to proceed.")
-    else:
-        img_bytes = ss.upload.getvalue()
-        st.info("Working on your design… this may take ~30–60 seconds.")
-        try:
-            scene = analyze_architecture(img_bytes)
-            if ss.design_mode == "Suggest Uplift Enhancements":
-                brief = make_uplift_brief(ss.style_goal, scene)
-                mode_flag = "uplift"
-            else:
-                brief = make_edit_brief(ss.style_goal, scene)
-                mode_flag = "revamp"
-
-            ss.result = edit_with_mask(
-                img_bytes, brief,
-                box_pad=ss.box_pad, mask_blur=ss.mask_blur,
-                edge_px=ss.edge_thick, c1=ss.canny1, c2=ss.canny2,
-                mode=mode_flag
-            )
-            ss.history = [("Initial", ss.result)]
-            ss.step = 3
-            st.rerun()
-        except Exception as e:
-            ss.error = str(e)
-            ss.step = 3
-            st.rerun()
-
-# ---------------- Step 3: Refine My Design ----------------
-elif ss.step == 3:
-    st.markdown("### ✨ Your AI-Styled Room")
-    cols = st.columns(2)
-    with cols[0]:
-        st.markdown("#### Original")
-        if ss.upload:
-            st.image(ss.upload, use_container_width=True)
-    with cols[1]:
-        st.markdown("#### Restyled")
-        if ss.result:
-            st.image(ss.result, use_container_width=True)
-        else:
-            st.error("❌ Generation failed.")
-            if ss.error:
-                st.exception(RuntimeError(ss.error))
-
-    st.markdown("---")
-    st.subheader("🔁 Refinement")
-    feedback = st.text_input(
-        "Describe further changes (e.g., 'Make rug blue, add floor lamp near window')",
-        key="refine_prompt"
-    )
-
-    col_r1, col_r2, col_r3 = st.columns(3)
-    with col_r1:
-        if st.button("Apply Refinement", type="primary", disabled=not (feedback and ss.result)):
-            try:
-                # Pull bytes from last result (data URL or remote)
-                if ss.result.startswith("data:image"):
-                    b64_part = ss.result.split(",")[1]
-                    img_bytes2 = base64.b64decode(b64_part)
-                else:
-                    import requests
-                    img_bytes2 = requests.get(ss.result, timeout=30).content
-
-                scene2 = analyze_architecture(img_bytes2)
-                if ss.design_mode == "Suggest Uplift Enhancements":
-                    brief2 = make_uplift_brief(f"{ss.style_goal}. User requested: {feedback}", scene2)
-                    mode2 = "uplift"
-                else:
-                    brief2 = make_edit_brief(f"{ss.style_goal}. User requested: {feedback}", scene2)
-                    mode2 = "revamp"
-
-                new_result = edit_with_mask(
-                    img_bytes2, brief2,
-                    box_pad=ss.box_pad, mask_blur=ss.mask_blur,
-                    edge_px=ss.edge_thick, c1=ss.canny1, c2=ss.canny2,
-                    mode=mode2
-                )
-                ss.history.append((feedback, new_result))
-                ss.result = new_result
-                st.success("Refinement applied!")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Refinement failed: {e}")
-
-    with col_r2:
-        if st.button("Undo", disabled=len(ss.history) <= 1):
-            if len(ss.history) > 1:
-                ss.history.pop()
-                ss.result = ss.history[-1][1]
-                st.success("Reverted.")
-                st.rerun()
-
-    with col_r3:
-        if st.button("Start Over"):
-            for k in list(ss.keys()):
-                del ss[k]
-            st.rerun()
-
-    if len(ss.history) > 1:
-        st.markdown("---")
-        st.subheader("🕓 Refinement History")
-        for i, (desc, img_url) in enumerate(ss.history):
-            st.markdown(f"**Step {i+1}:** {desc}")
-            st.image(img_url, width=160, use_container_width=False)
+        ss.canny2 = st.slider("Canny threshold 2", 40, 300, ss.canny2, step=10
