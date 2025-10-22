@@ -179,82 +179,64 @@ if "step" not in ss:
     ss.buy_now_clicked = False
     ss.image_description = None
 
-# --------------------- Main App Container ---------------------
-# Apply container only after splash
-if ss.step != 0:
-    st.markdown('<div class="main-container">', unsafe_allow_html=True)
+# --------------------- Main App Container / UI Logic ---------------------
 
-# --------------------- UI ---------------------
-
-# Step 0 — Splash Screen (fixed rendering + scroll reset)
+# Step 0 — Splash Screen (Simplified)
 if ss.step == 0:
-    splash_bg = data_url("assets/splash_background.jpg") or ""
+    splash_bg_url = data_url("assets/splash_background.jpg") or ""
     logo_url = data_url("assets/bello_logo.png")
 
-    # Inject minimal splash HTML/CSS inline (no Streamlit containers)
     st.markdown(f"""
         <style>
-        header, footer {{visibility: hidden;}}
-        .block-container {{
-            padding: 0 !important;
-            margin: 0 !important;
-            max-width: none !important;
-        }}
-        body {{
-            background-image: url('{splash_bg}');
-            background-size: cover;
-            background-position: center;
-            height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            margin: 0; /* Ensure no default body margin */
-        }}
-        .splash-logo {{
-            max-width: 260px;
-            animation: fadeIn 1.5s ease-in-out;
-        }}
-        @keyframes fadeIn {{
-            from {{opacity: 0; transform: scale(0.9);}}
-            to {{opacity: 1; transform: scale(1);}}
-        }}
+        /* Hide default Streamlit UI */
+        header[data-testid="stHeader"], footer {{ display: none !important; }}
+        /* Make block container full screen for splash */
+        .block-container {{ padding: 0 !important; margin: 0 !important; max-width: none !important; height: 100vh;
+                           display: flex; justify-content: center; align-items: center;
+                           background-image: url('{splash_bg_url}'); background-size: cover; background-position: center; }}
+        .splash-logo {{ max-width: 250px; animation: fadeIn 1.5s ease-in-out; }}
+        @keyframes fadeIn {{ from {{ opacity: 0; transform: scale(0.9); }} to {{ opacity: 1; transform: scale(1); }} }}
         </style>
-        {"<img src='"+logo_url+"' class='splash-logo'/>" if logo_url else "<h1>Bello Foyer</h1>"}
+        {"<img src='"+logo_url+"' class='splash-logo'/>" if logo_url else "<h1 style='color: #2d6a4f;'>Bello Foyer</h1>"}
     """, unsafe_allow_html=True)
 
-    # Short delay then continue
     time.sleep(2)
     ss.step = 1
     st.rerun()
 
-# --- All other steps go inside the main_container ---
+# --- All other steps use the main container ---
 else:
+    st.markdown('<div class="main-container">', unsafe_allow_html=True) # Start main container here
+
     # Step 1 — Welcome
     if ss.step == 1:
         # --- Simple Centered Header for Welcome ---
         st.markdown("<div class='welcome-header-simple'>", unsafe_allow_html=True)
         logo_path = "assets/bello_logo.png"
         if os.path.exists(logo_path):
-            st.image(logo_path, width=120) # Centered by default column behavior
+            st.image(logo_path, width=120) # Centered
         st.markdown("</div>", unsafe_allow_html=True)
 
         # --- Main Welcome Content ---
-        col1, col2 = st.columns([1, 1.1]) # Content columns
-        # Use CSS ordering for mobile
+        col1, col2 = st.columns([1, 1.1])
         with col1:
-             st.markdown("<div class='welcome-text-block'>", unsafe_allow_html=True) # Mobile: Order 1
+             st.markdown("<div class='welcome-text-block'>", unsafe_allow_html=True)
              st.markdown("<h1 class='welcome-headline'>Reimagine Your Space.<br>Instantly.</h1>", unsafe_allow_html=True)
              if st.button("Get Started", type="primary", use_container_width=True): ss.step = 2; st.rerun()
-             st.markdown("<p class='welcome-text'> Welcome to Bello Foyer where design dreams come to life...</p>", unsafe_allow_html=True) # Shortened
+             st.markdown("<p class='welcome-text'> Welcome to Bello Foyer where design dreams come to life...</p>", unsafe_allow_html=True)
              st.markdown("</div>", unsafe_allow_html=True)
         with col2:
-             st.markdown("<div class='welcome-video-block'>", unsafe_allow_html=True) # Mobile: Order 2
+             st.markdown("<div class='welcome-video-block'>", unsafe_allow_html=True)
              display_video_autoplay("assets/intro.mp4")
              st.markdown("</div>", unsafe_allow_html=True)
 
     # Steps 2–4 — Visual Quiz
     elif ss.step in [2, 3, 4]:
         st.markdown("<div class='quiz-container'>", unsafe_allow_html=True)
+        # Attempt to reset scroll using empty element
+        scroll_reset = st.empty()
+        scroll_reset.write("") # Render something temporary
+
         visual_quiz = {
             2: {"title": "Which look do you like better?", "options": {"quiz1_A.jpg": ["minimal"], "quiz1_B.jpg": ["modern"]}},
             3: {"title": "Which look do you like better?", "options": {"quiz2_A.jpg": ["boho"], "quiz2_B.jpg": ["scandi"]}},
@@ -275,29 +257,32 @@ else:
         st.markdown("---");
         if st.button("Back", use_container_width=True): ss.step = 1 if ss.step == 2 else ss.step - 1; st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
+        scroll_reset.empty() # Clear the element after rendering
 
     # Step 5 — Redesign Studio
     elif ss.step == 5:
         st.markdown("<h2 style='text-align:center;'>Your Redesign Studio</h2>", unsafe_allow_html=True)
         profile_placeholder = st.empty();
 
-        # Generate profile only if needed, show spinner within placeholder
+        # Generate profile only if needed
         if "customer_profile" not in ss or not ss.customer_profile:
             with profile_placeholder, st.spinner("Analyzing your style..."):
                  tags: List[str] = []; [tags.extend(ss.quiz_choices[k]) for k in sorted(ss.quiz_choices.keys()) if ss.quiz_choices[k]]
                  ss.customer_profile = generate_customer_profile(tags or ["modern"])
-        profile_placeholder.empty() # Clear placeholder regardless
+        profile_placeholder.empty()
 
-        # Display profile only if successfully generated and not default
+        # Display profile if it exists and isn't an error message
         if ss.customer_profile and "(Default due to error)" not in ss.customer_profile and "Could not generate profile" not in ss.customer_profile:
              with st.expander("Your AI-Generated Design Profile", expanded=True): st.markdown(ss.customer_profile)
-        elif ss.customer_profile: # Show generated profile even if it's the fallback/error
+        elif ss.customer_profile:
              st.info(ss.customer_profile)
-        # No else needed, if generation completely failed, the error is shown by the function
+        else: # Handle complete failure
+             st.warning("Profile generation failed. Using default style: Modern."); ss.customer_profile = "Modern style."
 
         st.markdown("---"); st.markdown("<h3 style='text-align:center;'>Let's Transform Your Room</h3>", unsafe_allow_html=True)
-        # Simplified: Use only file uploader
-        uploaded_file = st.file_uploader("Upload Now", type=["jpg", "png", "webp"], label_visibility="visible") # Keep label visible
+
+        # Simplified upload - remove columns, remove explicit camera (file_uploader handles it on mobile)
+        uploaded_file = st.file_uploader("Upload Now", type=["jpg", "png", "webp"], label_visibility="visible")
 
         if uploaded_file:
             ss.uploaded_file = uploaded_file
@@ -305,13 +290,11 @@ else:
             if st.button("Redesign My Room", type="primary", use_container_width=True):
                 ss.last_error = None; ss.image_description = None; ss.styled_image_url = None
                 ss.step = 5.5; st.rerun()
-        # Handle case where file is already in session state (e.g., coming back from error)
-        elif ss.uploaded_file is not None:
+        elif ss.uploaded_file is not None: # Keep showing image if already uploaded
              st.image(ss.uploaded_file, caption="Your room", use_container_width=True)
              if st.button("Redesign My Room", type="primary", use_container_width=True):
                 ss.last_error = None; ss.image_description = None; ss.styled_image_url = None
                 ss.step = 5.5; st.rerun()
-
 
         st.markdown("---")
         if st.button("Back"): ss.step = 4; st.rerun()
@@ -325,23 +308,22 @@ else:
         try:
             if not ss.uploaded_file: raise ValueError("No file uploaded.")
             img_bytes = ss.uploaded_file.getvalue()
-            # Ensure profile exists before proceeding
+            # Ensure profile exists
             if "customer_profile" not in ss or not ss.customer_profile:
                  tags: List[str] = []; [tags.extend(ss.quiz_choices[k]) for k in sorted(ss.quiz_choices.keys()) if ss.quiz_choices[k]]
                  ss.customer_profile = generate_customer_profile(tags or ["modern"])
                  if not ss.customer_profile or "(Default due to error)" in ss.customer_profile or "Could not generate profile" in ss.customer_profile:
-                      raise ValueError("Failed to generate a valid customer profile before processing.")
+                      raise ValueError("Failed to generate a valid profile.")
 
             with status_placeholder, st.spinner("⏳ Analyzing room..."): scene = analyze_room_architecture(img_bytes)
             with status_placeholder, st.spinner("🎨 Creating brief..."): brief = create_design_brief(ss.customer_profile, scene)
             with status_placeholder, st.spinner("🖼️ Preprocessing..."): png_bytes = preprocess_to_square_png(img_bytes)
-            with status_placeholder, st.spinner("✨ Generating design... (this can take ~30-60 seconds)"): ss.styled_image_url = edit_room_image_with_brief(png_bytes, brief)
+            with status_placeholder, st.spinner("✨ Generating design... (~30-60s)"): ss.styled_image_url = edit_room_image_with_brief(png_bytes, brief)
 
-            status_placeholder.success("✅ Design Complete!")
-            time.sleep(1) # Brief pause
+            status_placeholder.success("✅ Done!"); time.sleep(1)
             ss.last_error = None; ss.step = 6; st.rerun()
         except Exception as e:
-            ss.last_error = str(e); ss.styled_image_url = None; ss.step = 6; st.rerun() # Go to results to show error
+            ss.last_error = str(e); ss.styled_image_url = None; ss.step = 6; st.rerun()
 
     # Step 6 — Results
     elif ss.step == 6:
@@ -359,9 +341,8 @@ else:
         cL, cR = st.columns(2)
         with cL:
             if st.button("Start Over", use_container_width=True):
-                keys = list(ss.keys()) # Get all keys
-                for k in keys: del ss[k] # Clear all session state
-                st.cache_data.clear(); st.rerun() # Clear cache and rerun
+                keys = list(ss.keys()); [del ss[k] for k in keys]
+                st.cache_data.clear(); st.rerun()
         with cR:
             shop_disabled = not ss.styled_image_url
             if st.button("Shop the Look", type="primary", use_container_width=True, disabled=shop_disabled):
@@ -399,83 +380,82 @@ else:
                 ss.step = 6; ss.buy_now_clicked = False; st.rerun()
         with col_start_over:
             if st.button("Start Over", use_container_width=True, key="shop_start_over", disabled=ss.buy_now_clicked):
-                keys = list(ss.keys())
-                for k in keys: del ss[k]
+                keys = list(ss.keys()); [del ss[k] for k in keys]
                 st.cache_data.clear(); st.rerun()
 
-    # --------------------- Custom CSS for Layout and Style ---------------------
-    st.markdown(f"""
-    <style>
-        /* Base styles */
-        body {{ background:#fff8f9; font-family: 'Inter', sans-serif; margin: 0; }}
-        /* Control padding via main-container now */
-        .block-container {{ padding: 0 !important; margin: 0 !important; max-width: 100% !important; }}
-        .main-container {{ max-width: {'none' if ss.step == 0 else '900px'}; margin: auto; padding: {'0' if ss.step == 0 else '1rem'}; }}
-         /* Hide Streamlit elements only on splash */
-         header[data-testid="stHeader"], footer {{ display: {'none' if ss.step == 0 else 'inherit !important'}; }}
-
-        /* Splash screen styles */
-        /* (Splash CSS remains the same - ensure body style is compatible) */
-        #root > div:first-child {{
-             /* Style for splash container - check if still needed */
-        }}
-         .splash-logo {{ max-width: 260px; animation: fadeIn 1.5s ease-in-out; }}
-         @keyframes fadeIn {{ from {{ opacity: 0; }} to {{ opacity: 1; }} }}
+    # Close main container div
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
-        /* --- Welcome Screen Header (Step 1) --- */
-        .welcome-header-simple {{ text-align: center; margin-bottom: 2rem; padding-top: 1rem; }}
+# --------------------- Custom CSS for Layout and Style ---------------------
+st.markdown(f"""
+<style>
+    /* Base styles */
+    body {{ background:#fff8f9; font-family: 'Inter', sans-serif; margin: 0; }}
+    /* Control padding via main-container now */
+    .block-container {{ padding: 0 !important; margin: 0 !important; max-width: 100% !important; }}
+    .main-container {{ max-width: {'none' if ss.step == 0 else '900px'}; margin: auto; padding: {'0' if ss.step == 0 else '1rem'}; }}
+     /* Hide Streamlit elements only on splash */
+     header[data-testid="stHeader"], footer {{ display: {'none' if ss.step == 0 else 'inherit !important'}; }}
 
-        /* --- Welcome Screen Content (Step 1) --- */
-        .welcome-content {{ margin-top: 1rem; }}
-        .welcome-headline {{ font-size: 2.2rem; margin-bottom: 1.5rem; line-height: 1.2; text-align: left; }}
-        .welcome-text {{ font-size: 1rem; color: #495057; margin-top: 1.5rem; }}
-        .welcome-content .stButton {{ margin-top: 1rem; margin-bottom: 1rem; }}
+    /* Splash CSS remains the same */
 
-        /* --- Quiz Container Padding (Steps 2-4) --- */
-        .quiz-container {{ padding-top: 2rem; }} /* Add space from top */
+    /* --- Welcome Screen Header (Step 1) --- */
+    .welcome-header-simple {{ text-align: center; margin-bottom: 2rem; padding-top: 1rem; }}
 
-        /* Results screen styles */
-        .image-description {{ text-align: center; font-style: italic; color: #555; margin: 0.5rem 1rem 1.5rem 1rem; }}
+    /* --- Welcome Screen Content (Step 1) --- */
+    .welcome-content {{ margin-top: 1rem; }}
+    .welcome-headline {{ font-size: 2.2rem; margin-bottom: 1.5rem; line-height: 1.2; text-align: left; }}
+    .welcome-text {{ font-size: 1rem; color: #495057; margin-top: 1.5rem; }}
+    .welcome-content .stButton {{ margin-top: 1rem; margin-bottom: 1rem; }}
 
-        /* Shop the Look styles */
-        .shop-item-line {{ display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0; border-bottom: 1px solid #eee; }}
-        .item-name {{ flex-grow: 1; margin-right: 1rem; }} .item-price {{ font-weight: bold; white-space: nowrap; }}
+    /* --- Quiz Container Padding (Steps 2-4) --- */
+    .quiz-container {{ padding-top: 2rem; }} /* Add space from top */
 
-        /* --- Responsive Design for Mobile --- */
-        @media (max-width: 768px) {{
-            .main-container {{ padding: {'0' if ss.step == 0 else '1rem 0.5rem'}; }} /* Tighter mobile padding */
-            .welcome-header-simple img {{ width: 100px; }}
-            .welcome-headline {{ font-size: 1.8rem; text-align: center; }}
-            .welcome-text {{ font-size: 0.9rem; text-align: center; margin-bottom: 1rem; margin-top: 0; }}
-             /* Mobile stacking order for Welcome Screen - Updated */
-             /* Target the direct children columns container */
-             .main-container > div > div > div > div[data-testid="stHorizontalBlock"] {{ /* Adjust selector if needed */
-                 flex-direction: column !important; /* Force column */
-             }}
-             .welcome-text-block {{ order: 1; width: 100% !important; }}
-             .welcome-video-block {{ order: 2; width: 100% !important; margin-top: 1.5rem; }}
+    /* Results screen styles */
+    .image-description {{ text-align: center; font-style: italic; color: #555; margin: 0.5rem 1rem 1.5rem 1rem; }}
 
-            .quiz-container {{ padding-top: 1rem; }}
-            .shop-item-line {{ padding: 0.7rem 0; }}
-            .stButton>button[key*="remove_"] {{ padding: 0.1rem 0.4rem; font-size: 1rem; }}
-        }}
+    /* Shop the Look styles */
+    .shop-item-line {{ display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0; border-bottom: 1px solid #eee; }}
+    .item-name {{ flex-grow: 1; margin-right: 1rem; }} .item-price {{ font-weight: bold; white-space: nowrap; }}
 
-        /* Button Styles */
-        .stButton>button {{ background:#2d6a4f; border-radius: 8px; color: white; padding: 0.7rem 1.1rem; border: none; font-weight: bold; transition: background-color 0.2s; }}
-        .stButton>button:hover {{ background: #1e4934; filter: brightness(110%); }}
-        .stButton>button:disabled {{ background: #adb5bd; color: #6c757d; cursor: not-allowed; opacity: 0.7; }}
-        .stButton>button[kind="secondary"] {{ background:#e9ecef; color:#343a40; }}
-        .stButton>button[kind="secondary"]:hover {{ background: #ced4da; }}
-        .stButton>button[key*="remove_"] {{ background: none; color: #dc3545; padding: 0.1rem 0.4rem; font-size: 1rem; border: none; box-shadow: none; line-height: 1; }}
-        .stButton>button[key*="remove_"]:hover {{ background: none; color: #c82333; }}
-        /* Remove focus outline/border */
-        .stButton>button:focus, .stButton>button:active {{ outline: none !important; box-shadow: none !important; border: none !important; }}
-        button:focus {{ outline: none !important; }}
+    /* --- Responsive Design for Mobile --- */
+    @media (max-width: 768px) {{
+        .main-container {{ padding: {'0' if ss.step == 0 else '1rem 0.5rem'}; }}
+        .welcome-header-simple img {{ width: 100px; }}
+        .welcome-headline {{ font-size: 1.8rem; text-align: center; }}
+        .welcome-text {{ font-size: 0.9rem; text-align: center; margin-bottom: 1rem; margin-top: 0; }}
+         /* Mobile stacking order for Welcome Screen - Updated */
+         /* Target the direct children columns container */
+         /* Selector might need adjustment based on Streamlit version / structure */
+         .main-container > div > div > div > div[data-testid="stHorizontalBlock"] {{
+             flex-direction: column !important; /* Force column */
+         }}
+         .welcome-text-block {{ order: 1; width: 100% !important; }}
+         .welcome-video-block {{ order: 2; width: 100% !important; margin-top: 1.5rem; }}
 
-    </style>
-    """, unsafe_allow_html=True)
+        .quiz-container {{ padding-top: 1rem; }}
+        .shop-item-line {{ padding: 0.7rem 0; }}
+        .stButton>button[key*="remove_"] {{ padding: 0.1rem 0.4rem; font-size: 1rem; }}
+    }}
 
-    # Close main container div only if not on splash screen
-    if ss.step != 0: st.markdown('</div>', unsafe_allow_html=True)
+    /* Button Styles */
+    .stButton>button {{ background:#2d6a4f; border-radius: 8px; color: white; padding: 0.7rem 1.1rem; border: none; font-weight: bold; transition: background-color 0.2s; }}
+    .stButton>button:hover {{ background: #1e4934; filter: brightness(110%); }}
+    .stButton>button:disabled {{ background: #adb5bd; color: #6c757d; cursor: not-allowed; opacity: 0.7; }}
+    .stButton>button[kind="secondary"] {{ background:#e9ecef; color:#343a40; }}
+    .stButton>button[kind="secondary"]:hover {{ background: #ced4da; }}
+    .stButton>button[key*="remove_"] {{ background: none; color: #dc3545; padding: 0.1rem 0.4rem; font-size: 1rem; border: none; box-shadow: none; line-height: 1; }}
+    .stButton>button[key*="remove_"]:hover {{ background: none; color: #c82333; }}
+    /* Remove focus outline/border */
+    .stButton>button:focus, .stButton>button:active {{ outline: none !important; box-shadow: none !important; border: none !important; }}
+    button:focus {{ outline: none !important; }}
+
+</style>
+""", unsafe_allow_html=True)
+
+# Close main container div only if not on splash screen
+# Moved this outside the step logic to ensure it always closes if opened
+if ss.step != 0:
+    st.markdown('</div>', unsafe_allow_html=True)
 
