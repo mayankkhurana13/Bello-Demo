@@ -182,7 +182,8 @@ if "step" not in ss:
 # --------------------- Main App Container ---------------------
 # Apply container only after splash
 if ss.step != 0:
-    st.markdown('<div class="main-container">', unsafe_allow_html=True)
+    # Always reset scroll position to top on rerun
+    st.markdown("<script>window.scrollTo(0,0);</script>", unsafe_allow_html=True)
 
 # --------------------- UI ---------------------
 
