@@ -303,20 +303,15 @@ html, body, [data-testid="stAppViewContainer"], .stApp {
     color-scheme: light !important; /* Force light rendering */
 }
 
-/* --- AGGRESSIVE WIDGET FIXES V4 --- */
-
-/* Force light scheme on widgets themselves */
-[data-testid="stSelectbox"], [data-testid="stRadio"], [data-testid="stFileUploader"] {
-    color-scheme: light !important;
-}
+/* --- AGGRESSIVE WIDGET FIXES V5 --- */
 
 /* Blanket fix for all labels and spans */
 span, label {
     color: #2d3436 !important;
 }
 
-/* More specific selector for radio button text */
-[data-testid="stRadio"] label span {
+/* <<< FIX 1: "Scorched Earth" rule for st.radio. Force all children to be dark. */
+[data-testid="stRadio"] * {
     color: #2d3436 !important;
 }
 
@@ -333,6 +328,9 @@ span, label {
 
 /* Fix st.file_uploader text */
 [data-testid="stFileUploader"] label, [data-testid="stFileUploader"] small {
+    color: #2d3436 !important;
+}
+[data-testid="stFileUploader"] * {
     color: #2d3436 !important;
 }
 /* Fix file uploader dropzone and button */
@@ -387,8 +385,18 @@ if ss.step == 0:
 
     intro_video = "assets/intro.mp4"
     if os.path.exists(intro_video):
-        # <<< FIX 1: Switched back to st.video with muted=True for autoplay
-        st.video(intro_video, loop=True, muted=True)
+        # <<< FIX 2: Reverted to Base64 + HTML tag.
+        # This is the ONLY way to get 'playsinline' to work on mobile.
+        with open(intro_video, "rb") as f:
+            video_b64 = base64.b64encode(f.read()).decode("utf-8")
+        st.markdown(
+            f"""
+            <video autoplay muted playsinline loop>
+              <source src="data:video/mp4;base64,{video_b64}" type="video/mp4" />
+            </video>
+            """,
+            unsafe_allow_html=True
+        )
         
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("Get Started", type="primary", use_container_width=True):
@@ -408,7 +416,6 @@ elif ss.step == 1:
     ss.design_mode = st.radio("Design Mode", ["Revamp Full Room", "Suggest Uplift Enhancements"], index=0)
 
     st.subheader("📤 Upload a room photo")
-    # <<< FIX 2: Corrected typo 'jpgjpeg' to 'jpeg'
     upload = st.file_uploader("Upload JPG/PNG/WebP", type=["jpg", "jpeg", "png", "webp"])
     if upload:
         ss.upload = upload
