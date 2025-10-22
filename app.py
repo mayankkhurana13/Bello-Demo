@@ -479,3 +479,21 @@ else:
     # Close main container div only if not on splash screen
     if ss.step != 0: st.markdown('</div>', unsafe_allow_html=True)
 
+# Step 5.5 - Processing Screen
+elif ss.step == 5.5:
+    st.markdown("<h2 style='text-align:center;'>Creating Your Design...</h2>", unsafe_allow_html=True)
+    if ss.uploaded_file:
+        # Corrected line 283:
+        st.image(ss.uploaded_file, caption="Processing...", use_container_width=True) # Changed here
+    st.markdown("---")
+    status_placeholder = st.empty()
+    try:
+        if not ss.uploaded_file: raise ValueError("No file uploaded.")
+        img_bytes = ss.uploaded_file.getvalue()
+
+        # Wrap each step in a spinner using the placeholder
+        with status_placeholder, st.spinner("⏳ Analyzing room..."): scene = analyze_room_architecture(img_bytes)
+        # ... rest of the code for step 5.5 ...
+
+# ... rest of the file ...
+
