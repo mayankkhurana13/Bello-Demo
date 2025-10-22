@@ -254,7 +254,8 @@ def edit_with_mask(original_bytes: bytes, brief: str,
     padded_img = resize_1024(pad_to_square(img))
     padded_mask = resize_1024(pad_to_square(final_mask))
     img_io = io.BytesIO(); mask_io = io.BytesIO()
-    padded_img.save(img_io, format="PNG"); padded_mask.save(mask_io, format("PNG"))
+    # <<< FIX 1: Added missing closing parenthesis ')' here
+    padded_img.save(img_io, format="PNG"); padded_mask.save(mask_io, format="PNG")
     img_io.seek(0); mask_io.seek(0)
     img_io.name = "image.png"; mask_io.name = "mask.png"
 
@@ -269,3 +270,267 @@ def edit_with_mask(original_bytes: bytes, brief: str,
     data = edit.data[0]
     if getattr(data, "b64_json", None):
         return "data:image/png;base64," + data.b64_json
+    if getattr(data, "url", None):
+        return data.url
+    raise RuntimeError("Image API returned no usable data.")
+
+# ---------------- Session State ----------------
+ss = st.session_state
+if "step" not in ss:
+    ss.step = 0
+    ss.upload = None
+    ss.style_goal = "Modern"
+    ss.design_mode = "Revamp Full Room"
+    ss.result = None
+    ss.history = []  # list of (description, image_url)
+    ss.error = None
+    # Advanced mask defaults
+    ss.mask_blur = 6
+    ss.edge_thick = 6
+    ss.canny1 = 80
+    ss.canny2 = 160
+    ss.box_pad = 12
+
+# ---------------- Pastel Theme CSS (Mobile-fixed) ----------------
+# ---- Bello Foyer pastel light theme (mobile safe) ----
+def inject_bello_theme():
+    st.markdown(
+        """
+<style>
+/* Force light, pastel background AND dark text */
+html, body, [data-testid="stAppViewContainer"], .stApp {
+    background-color: #fff8f9 !important;
+    color: #2d3436 !important; 
+    color-scheme: light !important; /* Force light rendering */
+}
+
+/* --- AGGRESSIVE WIDGET FIXES V3 --- */
+
+/* Force light scheme on widgets themselves */
+[data-testid="stSelectbox"], [data-testid="stRadio"], [data-testid="stFileUploader"] {
+    color-scheme: light !important;
+}
+
+/* Blanket fix for all labels and spans */
+span, label {
+    color: #2d3436 !important;
+}
+
+/* Fix st.radio button labels (invisible text) */
+[data-testid="stRadio"] label {
+    color: #2d3436 !important;
+}
+
+/* Fix st.selectbox (dark box) */
+[data-testid="stSelectbox"] div[data-baseweb="select"] > div {
+     background-color: #ffffff !important;
+     border: 1px solid #dcdcdc !important; /* Ensure border is visible */
+     border-radius: 8px !important;
+}
+/* Fix st.selectbox text color (all children) */
+[data-testid="stSelectbox"] * {
+    color: #2d3436 !important;
+}
+
+/* Fix st.file_uploader text */
+[data-testid="stFileUploader"] label, [data-testid="stFileUploader"] small {
+    color: #2d3436 !important;
+}
+/* Fix file uploader dropzone and button */
+[data-testid="stFileUploader"] section {
+    background-color: #ffffff !important;
+    border: 1px dashed #dcdcdc !important;
+}
+[data-testid="stFileUploader"] section button {
+    background-color: #f0f2f6 !important; /* Standard light-mode streamlit button */
+    color: #2d3436 !important;
+    border: 1px solid #dcdcdc !important;
+}
+
+/* --- END AGGRESSIVE FIXES --- */
+
+
+/* Primary buttons */
+.stButton > button {
+    background-color: #2d3436 !important; 
+    color: #ffffff !important;
+    font-weight: 600 !important;
+    border: none !important;
+    padding: 0.6rem 1rem !important;
+    border-radius: 8px !important;
+    transition: background-color 0.2s ease-in-out !important;
+}
+.stButton > button:hover {
+    background-color: #4a5457 !important; 
+}
+
+/* Enforce light mode even if device prefers dark */
+@media (prefers-color-scheme: dark) {
+  html, body {
+    background-color: #fff8f9 !important;
+    color: #2d3436 !important; 
+  }
+}
+</style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+inject_bello_theme()
+
+# ---------------- Step 0: Welcome ----------------
+if ss.step == 0:
+    logo_path = "assets/bello_logo.png"
+    if os.path.exists(logo_path):
+        st.image(logo_path, width=180)
+    else:
+        st.markdown("<h1 style='color:#2d3436;'>Bello Foyer</h1>", unsafe_allow_html=True) # color to match button
+
+    # <<< FIX 2: Corrected video path from 'assets.mp4' to 'assets/intro.mp4'
+    intro_video = "assets/intro.mp4"
+    if os.path.exists(intro_video):
+        # Replaced inefficient Base64 method with st.video for fast loading
+        st.video(intro_video, loop=True)
+        
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("Get Started", type="primary", use_container_width=True):
+        ss.step = 1
+        st.rerun()
+
+# ---------------- Step 1: Design Studio ----------------
+elif ss.step == 1:
+    st.subheader("🎨 Select Your Design Style")
+    style_options = ["Minimal", "Modern", "Boho", "Scandi", "Industrial", "Classic", "Contemporary Luxe"]
+    ss.style_goal = st.selectbox(
+        "Choose style", style_options,
+        index=style_options.index(ss.style_goal if ss.style_goal in style_options else "Modern")
+    )
+
+    st.subheader("🔧 Select Mode")
+    ss.design_mode = st.radio("Design Mode", ["Revamp Full Room", "Suggest Uplift Enhancements"], index=0)
+
+    st.subheader("📤 Upload a room photo")
+    upload = st.file_uploader("Upload JPG/PNG/WebP", type=["jpg", "jpeg", "png", "webp"])
+    if upload:
+        ss.upload = upload
+        st.image(upload, use_container_width=True, caption="Your room photo")
+
+    with st.expander("Advanced mask controls (optional)", expanded=False):
+        ss.box_pad = st.slider("Furniture padding (px)", 4, 30, ss.box_pad, step=2)
+        ss.mask_blur = st.slider("Mask feather (px)", 2, 16, ss.mask_blur, step=1)
+        ss.edge_thick = st.slider("Edge lock thickness (px)", 2, 18, ss.edge_thick, step=1)
+        ss.canny1 = st.slider("Canny threshold 1", 20, 200, ss.canny1, step=10)
+        ss.canny2 = st.slider("Canny threshold 2", 40, 300, ss.canny2, step=10)
+
+    if ss.upload and st.button("Generate Design", type="primary", use_container_width=True):
+        ss.step = 2
+        st.rerun()
+
+# ---------------- Step 2: Processing ----------------
+elif ss.step == 2:
+    if not ss.upload:
+        st.warning("Please upload a room photo to proceed.")
+    else:
+        img_bytes = ss.upload.getvalue()
+        st.info("Working on your design… this may take ~30–60 seconds.")
+        try:
+            scene = analyze_architecture(img_bytes)
+            if ss.design_mode == "Suggest Uplift Enhancements":
+                brief = make_uplift_brief(ss.style_goal, scene)
+                mode_flag = "uplift"
+            else:
+                brief = make_edit_brief(ss.style_goal, scene)
+                mode_flag = "revamp"
+
+            ss.result = edit_with_mask(
+                img_bytes, brief,
+                box_pad=ss.box_pad, mask_blur=ss.mask_blur,
+                edge_px=ss.edge_thick, c1=ss.canny1, c2=ss.canny2,
+                mode=mode_flag
+            )
+            ss.history = [("Initial", ss.result)]
+            ss.step = 3
+            st.rerun()
+        except Exception as e:
+            ss.error = str(e)
+            ss.step = 3
+            st.rerun()
+
+# ---------------- Step 3: Refine My Design ----------------
+elif ss.step == 3:
+    st.markdown("### ✨ Your AI-Styled Room")
+    cols = st.columns(2)
+    with cols[0]:
+        st.markdown("#### Original")
+        if ss.upload:
+            st.image(ss.upload, use_container_width=True)
+    with cols[1]:
+        st.markdown("#### Restyled")
+        if ss.result:
+            st.image(ss.result, use_container_width=True)
+        else:
+            st.error("❌ Generation failed.")
+            if ss.error:
+                st.exception(RuntimeError(ss.error))
+
+    st.markdown("---")
+    st.subheader("🔁 Refinement")
+    feedback = st.text_input(
+        "Describe further changes (e.g., 'Make rug blue, add floor lamp near window')",
+        key="refine_prompt"
+    )
+
+    col_r1, col_r2, col_r3 = st.columns(3)
+    with col_r1:
+        if st.button("Apply Refinement", type="primary", disabled=not (feedback and ss.result)):
+            try:
+                # Pull bytes from last result (data URL or remote)
+                if ss.result.startswith("data:image"):
+                    b64_part = ss.result.split(",")[1]
+                    img_bytes2 = base64.b64decode(b64_part)
+                else:
+                    import requests
+                    img_bytes2 = requests.get(ss.result, timeout=30).content
+
+                scene2 = analyze_architecture(img_bytes2)
+                if ss.design_mode == "Suggest Uplift Enhancements":
+                    brief2 = make_uplift_brief(f"{ss.style_goal}. User requested: {feedback}", scene2)
+                    mode2 = "uplift"
+                else:
+                    brief2 = make_edit_brief(f"{ss.style_goal}. User requested: {feedback}", scene2)
+                    mode2 = "revamp"
+
+                new_result = edit_with_mask(
+                    img_bytes2, brief2,
+                    box_pad=ss.box_pad, mask_blur=ss.mask_blur,
+                    edge_px=ss.edge_thick, c1=ss.canny1, c2=ss.canny2,
+                    mode=mode2
+                )
+                ss.history.append((feedback, new_result))
+                ss.result = new_result
+                st.success("Refinement applied!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Refinement failed: {e}")
+
+    with col_r2:
+        if st.button("Undo", disabled=len(ss.history) <= 1):
+            if len(ss.history) > 1:
+                ss.history.pop()
+                ss.result = ss.history[-1][1]
+                st.success("Reverted.")
+                st.rerun()
+
+    with col_r3:
+        if st.button("Start Over"):
+            for k in list(ss.keys()):
+                del ss[k]
+            st.rerun()
+
+    if len(ss.history) > 1:
+        st.markdown("---")
+        st.subheader("🕓 Refinement History")
+        # <<< FIX 3: Corrected typo 'img_Furl' to 'img_url'
+        for i, (desc, img_url) in enumerate(ss.history):
+            st.markdown(f"**Step {i+1}:** {desc}")
+            st.image(img_url, width=160, use_container_width=False)
