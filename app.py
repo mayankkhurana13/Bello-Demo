@@ -1,6 +1,6 @@
-# Bello Foyer – Studio Edition (Soft Pastel Theme)
+# Bello Foyer – Studio Edition (Soft Pastel Theme, Mobile-Fixed)
 # Furniture-Only Restyle / Uplift Enhancements + Iterative Refinement
-# Requirements: streamlit, openai (v1.x), pillow, numpy, opencv-python-headless (optional), requests
+# Deps: streamlit, openai (v1.x), pillow, numpy, opencv-python-headless, requests
 
 import os
 import io
@@ -32,12 +32,12 @@ except Exception:
 if not api_key:
     api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
-    st.error("OpenAI API key missing. Please set OPENAI_API_KEY in your environment or Streamlit secrets.")
+    st.error("OpenAI API key missing. Set OPENAI_API_KEY in env or .streamlit/secrets.toml.")
     st.stop()
 
 client = OpenAI(api_key=api_key)
 
-# ---------------- Helper Functions ----------------
+# ---------------- Helpers ----------------
 def b64_image(image_bytes: bytes) -> str:
     return base64.b64encode(image_bytes).decode("utf-8")
 
@@ -51,7 +51,7 @@ def pad_to_square(image: Image.Image) -> Image.Image:
 def resize_1024(image: Image.Image) -> Image.Image:
     return image.resize((1024, 1024), Image.LANCZOS)
 
-# ---------------- Vision: Detect Movable Furniture/Decor ----------------
+# ---------------- Vision: Movable Boxes ----------------
 def detect_movable_boxes(image_bytes: bytes) -> List[Dict]:
     prompt = (
         "Detect MOVABLE furniture and decor in this interior room photo. "
@@ -92,7 +92,6 @@ def detect_movable_boxes(image_bytes: bytes) -> List[Dict]:
 def edge_lock_mask(img: Image.Image, thickness_px: int = 6, canny1: int = 80, canny2: int = 160) -> Image.Image:
     w, h = img.size
     if not HAS_CV2:
-        # If cv2 isn't available, return fully transparent edge mask (no additional lock)
         return Image.new("RGBA", (w, h), (0, 0, 0, 0))
     arr = np.array(img.convert("RGB"))[:, :, ::-1]  # BGR
     gray = cv2.cvtColor(arr, cv2.COLOR_BGR2GRAY)
@@ -105,15 +104,14 @@ def edge_lock_mask(img: Image.Image, thickness_px: int = 6, canny1: int = 80, ca
 # ---------------- Box Mask for Furniture ----------------
 def boxes_mask(img: Image.Image, boxes: List[Dict], pad_px: int = 12, blur_px: int = 6) -> Image.Image:
     w, h = img.size
-    # Start opaque (locked), paint holes where edits allowed
-    base = Image.new("L", (w, h), 255)
+    base = Image.new("L", (w, h), 255)  # opaque/locked
     draw = ImageDraw.Draw(base)
     for b in boxes:
         x0 = max(0, int(b["x"] * w) - pad_px)
         y0 = max(0, int(b["y"] * h) - pad_px)
         x1 = min(w, int((b["x"] + b["w"]) * w) + pad_px)
         y1 = min(h, int((b["y"] + b["h"]) * h) + pad_px)
-        draw.rectangle([x0, y0, x1, y1], fill=0)
+        draw.rectangle([x0, y0, x1, y1], fill=0)  # transparent/editable
     base = base.filter(ImageFilter.GaussianBlur(blur_px))
     return Image.merge("RGBA", (base, base, base, base))
 
@@ -128,7 +126,7 @@ def detect_placement_boxes(image_bytes: bytes) -> List[Dict]:
     )
     try:
         b64 = b64_image(image_bytes)
-        resp = client.chat.completions.create(
+        resp = client.chat_completions.create(  # fallback if preferred; but keep primary call below
             model="gpt-4o",
             messages=[{
                 "role": "user",
@@ -140,6 +138,29 @@ def detect_placement_boxes(image_bytes: bytes) -> List[Dict]:
             response_format={"type": "json_object"},
             max_tokens=600
         )
+        # If above doesn't exist in your SDK, use the standard call below:
+    except Exception:
+        resp = None
+
+    if not resp:
+        try:
+            resp = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_image(image_bytes)}"}}
+                    ]
+                }],
+                response_format={"type": "json_object"},
+                max_tokens=600
+            )
+        except Exception as e:
+            print("detect_placement_boxes error:", e)
+            return []
+
+    try:
         data = json.loads(resp.choices[0].message.content)
         boxes = data.get("boxes", [])
         clean = []
@@ -152,7 +173,7 @@ def detect_placement_boxes(image_bytes: bytes) -> List[Dict]:
                 continue
         return clean
     except Exception as e:
-        print("detect_placement_boxes error:", e)
+        print("detect_placement_boxes parse error:", e)
         return []
 
 # ---------------- Analyze Architecture ----------------
@@ -206,35 +227,30 @@ def edit_with_mask(original_bytes: bytes, brief: str,
     img = Image.open(io.BytesIO(original_bytes)).convert("RGBA")
 
     if mode == "uplift":
-        # Fully locked except for small placement zones
+        # Fully locked except small placement zones
         placement = detect_placement_boxes(original_bytes)
         w, h = img.size
-        base = Image.new("L", (w, h), 255)  # opaque/locked
+        base = Image.new("L", (w, h), 255)  # locked
         draw = ImageDraw.Draw(base)
         for b in placement:
             x0 = max(0, int(b["x"] * w) - box_pad)
             y0 = max(0, int(b["y"] * h) - box_pad)
             x1 = min(w, int((b["x"] + b["w"]) * w) + box_pad)
             y1 = min(h, int((b["y"] + b["h"]) * h) + box_pad)
-            draw.rectangle([x0, y0, x1, y1], fill=0)  # transparent/editable
+            draw.rectangle([x0, y0, x1, y1], fill=0)
         base = base.filter(ImageFilter.GaussianBlur(mask_blur))
         placement_mask = Image.merge("RGBA", (base, base, base, base))
         edge_mask = edge_lock_mask(img, edge_px, c1, c2)
-        L1 = placement_mask.split()[0]
-        L2 = edge_mask.split()[0]
-        L_final = ImageChops.lighter(L1, L2)
+        L_final = ImageChops.lighter(placement_mask.split()[0], edge_mask.split()[0])
         final_mask = Image.merge("RGBA", (L_final, L_final, L_final, L_final))
     else:
-        # Revamp movable furniture regions (from detection) + edge lock
+        # Revamp movable furniture regions + edge lock
         boxes = detect_movable_boxes(original_bytes)
         furn_mask = boxes_mask(img, boxes, pad_px=box_pad, blur_px=mask_blur)
         edge_mask = edge_lock_mask(img, edge_px, c1, c2)
-        L1 = furn_mask.split()[0]
-        L2 = edge_mask.split()[0]
-        L_final = ImageChops.lighter(L1, L2)
+        L_final = ImageChops.lighter(furn_mask.split()[0], edge_mask.split()[0])
         final_mask = Image.merge("RGBA", (L_final, L_final, L_final, L_final))
 
-    # Prepare payloads as named PNGs (avoid octet-stream)
     padded_img = resize_1024(pad_to_square(img))
     padded_mask = resize_1024(pad_to_square(final_mask))
     img_io = io.BytesIO(); mask_io = io.BytesIO()
@@ -274,39 +290,52 @@ if "step" not in ss:
     ss.canny2 = 160
     ss.box_pad = 12
 
-# ---------------- Soft Pastel Theme CSS ----------------
+# ---------------- Pastel Theme CSS (Mobile-fixed) ----------------
 st.markdown("""
 <style>
-  body { background-color: #fff8f9; color: #2b2b2b; }
-  .block-container { padding: 1rem !important; max-width: 900px; margin: auto; }
+  :root {
+    --bello-bg: #fff8f9;
+    --bello-green: #2d6a4f;
+    --bello-green-dark: #235742;
+    --bello-text: #2b2b2b;
+    --bello-card: #ffffff;
+    --bello-border: #e9ecef;
+  }
+  html, body, .stApp, [data-testid="stAppViewContainer"] {
+    background-color: var(--bello-bg) !important;
+    color: var(--bello-text);
+  }
+  .block-container {
+    padding: 1rem !important;
+    max-width: 900px;
+    margin: auto;
+  }
   /* Buttons */
   .stButton>button {
-      background:#2d6a4f; color:#fff; border:none; border-radius:12px;
-      padding:0.65rem 1.2rem; font-weight:600; box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+    background: var(--bello-green);
+    color:#fff; border:none; border-radius:12px;
+    padding:0.65rem 1.2rem; font-weight:600;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
   }
-  .stButton>button:hover { background:#235742; }
+  .stButton>button:hover { background: var(--bello-green-dark); }
   .stButton>button:disabled { background:#cdd6d3; color:#6d7571; }
   /* Inputs & cards */
-  .stFileUploader, .stSelectbox, .stRadio, .stTextInput, .stTextArea {
-      background: #ffffff10;
-  }
+  .stFileUploader, .stSelectbox, .stRadio, .stTextInput, .stTextArea { background: #ffffff10; }
   .stTextInput>div>div>input {
-      background: #ffffff; border-radius: 10px; border: 1px solid #e9ecef; padding: 0.6rem 0.8rem;
+    background: var(--bello-card); border-radius: 10px; border: 1px solid var(--bello-border);
+    padding: 0.6rem 0.8rem;
   }
-  .stSelectbox>div>div>div>div, .stRadio {
-      background: #ffffff; border-radius: 10px; border: 1px solid #e9ecef;
-  }
-  .stFileUploader>div>div {
-      background: #ffffff; border-radius: 10px; border: 1px solid #e9ecef;
+  .stSelectbox>div>div>div, .stRadio, .stFileUploader>div>div {
+    background: var(--bello-card); border-radius: 10px; border: 1px solid var(--bello-border);
   }
   /* Titles */
   h1, h2, h3, h4, h5 { color: #243d30; }
   /* Video */
-  video { border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
+  video { border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.08); width: 100%; height: auto; }
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------- Step 0: Welcome Screen ----------------
+# ---------------- Step 0: Welcome ----------------
 if ss.step == 0:
     logo_path = "assets/bello_logo.png"
     if os.path.exists(logo_path):
@@ -320,7 +349,7 @@ if ss.step == 0:
             video_b64 = base64.b64encode(f.read()).decode("utf-8")
         st.markdown(
             f"""
-            <video width="100%" autoplay muted playsinline loop>
+            <video autoplay muted playsinline loop>
               <source src="data:video/mp4;base64,{video_b64}" type="video/mp4" />
             </video>
             """,
@@ -348,7 +377,7 @@ elif ss.step == 1:
     upload = st.file_uploader("Upload JPG/PNG/WebP", type=["jpg", "jpeg", "png", "webp"])
     if upload:
         ss.upload = upload
-        st.image(upload, use_column_width=True, caption="Your room photo")
+        st.image(upload, use_container_width=True, caption="Your room photo")
 
     with st.expander("Advanced mask controls (optional)", expanded=False):
         ss.box_pad = st.slider("Furniture padding (px)", 4, 30, ss.box_pad, step=2)
@@ -361,7 +390,7 @@ elif ss.step == 1:
         ss.step = 2
         st.rerun()
 
-# ---------------- Step 2: Processing Generation ----------------
+# ---------------- Step 2: Processing ----------------
 elif ss.step == 2:
     if not ss.upload:
         st.warning("Please upload a room photo to proceed.")
@@ -398,11 +427,11 @@ elif ss.step == 3:
     with cols[0]:
         st.markdown("#### Original")
         if ss.upload:
-            st.image(ss.upload, use_column_width=True)
+            st.image(ss.upload, use_container_width=True)
     with cols[1]:
         st.markdown("#### Restyled")
         if ss.result:
-            st.image(ss.result, use_column_width=True)
+            st.image(ss.result, use_container_width=True)
         else:
             st.error("❌ Generation failed.")
             if ss.error:
@@ -419,7 +448,7 @@ elif ss.step == 3:
     with col_r1:
         if st.button("Apply Refinement", type="primary", disabled=not (feedback and ss.result)):
             try:
-                # Get bytes from the last result (data URL or remote URL)
+                # Pull bytes from last result (data URL or remote)
                 if ss.result.startswith("data:image"):
                     b64_part = ss.result.split(",")[1]
                     img_bytes2 = base64.b64decode(b64_part)
@@ -427,14 +456,11 @@ elif ss.step == 3:
                     import requests
                     img_bytes2 = requests.get(ss.result, timeout=30).content
 
-                # Reuse architecture (quick check) for stability
                 scene2 = analyze_architecture(img_bytes2)
                 if ss.design_mode == "Suggest Uplift Enhancements":
-                    # Uplift: keep everything, add small decor; append the user's ask
                     brief2 = make_uplift_brief(f"{ss.style_goal}. User requested: {feedback}", scene2)
                     mode2 = "uplift"
                 else:
-                    # Revamp: restyle movable items; include user's ask
                     brief2 = make_edit_brief(f"{ss.style_goal}. User requested: {feedback}", scene2)
                     mode2 = "revamp"
 
@@ -470,4 +496,4 @@ elif ss.step == 3:
         st.subheader("🕓 Refinement History")
         for i, (desc, img_url) in enumerate(ss.history):
             st.markdown(f"**Step {i+1}:** {desc}")
-            st.image(img_url, width=160)
+            st.image(img_url, width=160, use_container_width=False)
