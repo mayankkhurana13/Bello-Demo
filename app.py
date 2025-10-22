@@ -254,7 +254,7 @@ def edit_with_mask(original_bytes: bytes, brief: str,
     padded_img = resize_1024(pad_to_square(img))
     padded_mask = resize_1024(pad_to_square(final_mask))
     img_io = io.BytesIO(); mask_io = io.BytesIO()
-    padded_img.save(img_io, format="PNG"); padded_mask.save(mask_io, format("PNG")
+    padded_img.save(img_io, format="PNG"); padded_mask.save(mask_io, format("PNG"))
     img_io.seek(0); mask_io.seek(0)
     img_io.name = "image.png"; mask_io.name = "mask.png"
 
