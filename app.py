@@ -104,14 +104,37 @@ def analyze_room_architecture(image_bytes: bytes) -> str:
     except Exception as e: print(f"Room Analysis Error: {e}"); return "Analysis unavailable."
 
 @st.cache_data
-def create_design_brief(profile: str, scene_report: str) -> str:
-    try:
-        resp = client.chat.completions.create( model="gpt-4o", messages=[ {"role": "system", "content": "You are a world-class interior designer. Produce a single-paragraph brief."}, {"role": "user", "content": f"Create a photorealistic brief starting with 'A photorealistic professional photograph of...'. Keep ALL architecture (walls, floor, ceiling, windows, doors, layout, fixed lights) EXACTLY the same. Only change MOVABLE items (furniture, rugs, decor, art, plants). Make no structural changes. \n\nUser Style Preference: {profile}\n\nScene Report (Unchangeable Structure): {scene_report}" }], max_tokens=700)
-        brief = resp.choices[0].message.content.strip()
-        brief += "\n\nIMPORTANT: Fit scale/perspective exactly. Place items only in transparent mask area. Do not change architecture."
-        return brief
-    except Exception as e: print(f"Design Brief Error: {e}"); return f"A photorealistic professional photograph of a room matching the user's taste: {profile}. Architecture must remain identical."
+def analyze_room_architecture(image_bytes: bytes) -> str:
+    """Use vision to describe fixed architectural features only.
+       Raises ValueError if the image is not recognized as a suitable room view."""
+    b64 = base64.b64encode(image_bytes).decode("utf-8")
+    prompt = """
+    First, confirm if this image shows an interior room view suitable for redesign (Yes/No). Look for walls, floor, ceiling, and spatial context. Output the confirmation on the first line like 'Confirmation: Yes' or 'Confirmation: No'.
 
+    If Yes, then on subsequent lines, analyze the room's permanent architectural features (layout, flooring, windows, doors, fixed lighting). Do NOT describe movable furniture or decor. Keep the analysis concise (2-3 sentences max).
+    """
+    try:
+        resp = client.chat.completions.create( model="gpt-4o", messages=[{"role": "user", "content": [ {"type": "text", "text": prompt}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}} ]}], max_tokens=200) # Reduced max_tokens slightly
+        message_content = resp.choices[0].message.content.strip() if resp.choices and resp.choices[0].message else ""
+
+        # Check the confirmation
+        if message_content.startswith("Confirmation: No"):
+            raise ValueError("Unable to see the room, please try a wider angle.")
+        elif message_content.startswith("Confirmation: Yes"):
+            # Return the analysis part (everything after the first line)
+            analysis = message_content.split('\n', 1)[1].strip() if '\n' in message_content else "Basic room features identified."
+            return analysis
+        else:
+            # If the model didn't follow instructions, treat as unclear
+             print("Warning: AI did not provide clear confirmation. Assuming it's not a room.")
+             raise ValueError("Unable to see the room, please try a wider angle.")
+
+    except ValueError as ve: # Re-raise the specific error
+        raise ve
+    except Exception as e:
+        print(f"Room Analysis Error: {e}")
+        # Return a generic failure message that is *not* the specific user error
+        return "Analysis failed due to an unexpected error."
 def edit_room_image_with_brief(processed_png_bytes: bytes, brief: str) -> str:
     img_io = io.BytesIO(processed_png_bytes); img_io.name = "input.png"
     mask_bytes = make_architecture_preserving_mask((1024, 1024)); mask_io = io.BytesIO(mask_bytes); mask_io.name = "mask.png"
