@@ -254,7 +254,6 @@ def edit_with_mask(original_bytes: bytes, brief: str,
     padded_img = resize_1024(pad_to_square(img))
     padded_mask = resize_1024(pad_to_square(final_mask))
     img_io = io.BytesIO(); mask_io = io.BytesIO()
-    # <<< FIX 1: Added missing closing parenthesis ')' here
     padded_img.save(img_io, format="PNG"); padded_mask.save(mask_io, format="PNG")
     img_io.seek(0); mask_io.seek(0)
     img_io.name = "image.png"; mask_io.name = "mask.png"
@@ -304,7 +303,7 @@ html, body, [data-testid="stAppViewContainer"], .stApp {
     color-scheme: light !important; /* Force light rendering */
 }
 
-/* --- AGGRESSIVE WIDGET FIXES V3 --- */
+/* --- AGGRESSIVE WIDGET FIXES V4 --- */
 
 /* Force light scheme on widgets themselves */
 [data-testid="stSelectbox"], [data-testid="stRadio"], [data-testid="stFileUploader"] {
@@ -316,8 +315,8 @@ span, label {
     color: #2d3436 !important;
 }
 
-/* Fix st.radio button labels (invisible text) */
-[data-testid="stRadio"] label {
+/* More specific selector for radio button text */
+[data-testid="stRadio"] label span {
     color: #2d3436 !important;
 }
 
@@ -386,11 +385,10 @@ if ss.step == 0:
     else:
         st.markdown("<h1 style='color:#2d3436;'>Bello Foyer</h1>", unsafe_allow_html=True) # color to match button
 
-    # <<< FIX 2: Corrected video path from 'assets.mp4' to 'assets/intro.mp4'
     intro_video = "assets/intro.mp4"
     if os.path.exists(intro_video):
-        # Replaced inefficient Base64 method with st.video for fast loading
-        st.video(intro_video, loop=True)
+        # <<< FIX 1: Switched back to st.video with muted=True for autoplay
+        st.video(intro_video, loop=True, muted=True)
         
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("Get Started", type="primary", use_container_width=True):
@@ -410,6 +408,7 @@ elif ss.step == 1:
     ss.design_mode = st.radio("Design Mode", ["Revamp Full Room", "Suggest Uplift Enhancements"], index=0)
 
     st.subheader("📤 Upload a room photo")
+    # <<< FIX 2: Corrected typo 'jpgjpeg' to 'jpeg'
     upload = st.file_uploader("Upload JPG/PNG/WebP", type=["jpg", "jpeg", "png", "webp"])
     if upload:
         ss.upload = upload
@@ -530,7 +529,6 @@ elif ss.step == 3:
     if len(ss.history) > 1:
         st.markdown("---")
         st.subheader("🕓 Refinement History")
-        # <<< FIX 3: Corrected typo 'img_Furl' to 'img_url'
         for i, (desc, img_url) in enumerate(ss.history):
             st.markdown(f"**Step {i+1}:** {desc}")
             st.image(img_url, width=160, use_container_width=False)
