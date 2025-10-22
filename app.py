@@ -292,54 +292,55 @@ if "step" not in ss:
 
 # ---------------- Pastel Theme CSS (Mobile-fixed) ----------------
 st.markdown("""
-# Force Streamlit to use a light pastel Bello Foyer theme
+# Force Streamlit to stay in Bello Foyer pastel light theme (fix for mobile Safari)
 st.markdown("""
-    <style>
-    html, body, [data-testid="stAppViewContainer"] {
+<style>
+html, body, [data-testid="stAppViewContainer"] {
+    background-color: #fff8f9 !important;
+    color-scheme: light !important;
+}
+:root {
+    color-scheme: light;
+}
+
+/* Global Input + Select + Textarea */
+input, select, textarea, .stFileUploader, .stButton>button {
+    background-color: #ffffff !important;
+    color: #2d3436 !important;
+    border-radius: 8px !important;
+    border: 1px solid #dcdcdc !important;
+}
+
+/* Green Bello Foyer buttons */
+.stButton>button {
+    background-color: #2d6a4f !important;
+    color: white !important;
+    font-weight: 600 !important;
+    border: none !important;
+    padding: 0.6rem 1rem !important;
+    border-radius: 8px !important;
+    transition: all 0.2s ease-in-out !important;
+}
+.stButton>button:hover {
+    background-color: #1e4934 !important;
+}
+
+/* File uploader box */
+[data-testid="stFileUploader"] {
+    background-color: #ffffff !important;
+    border-radius: 10px !important;
+    border: 1px solid #e0e0e0 !important;
+    padding: 1rem !important;
+}
+
+/* Enforce light mode even if device dark theme */
+@media (prefers-color-scheme: dark) {
+    html, body {
         background-color: #fff8f9 !important;
-        color-scheme: light !important;
-    }
-    :root {
-        color-scheme: light;
-    }
-
-    /* Fix widgets on mobile */
-    input, select, textarea, .stFileUploader, .stButton>button {
-        background-color: #ffffff !important;
         color: #2d3436 !important;
-        border-radius: 8px !important;
-        border: 1px solid #dcdcdc !important;
     }
-
-    .stButton>button {
-        background-color: #2d6a4f !important;
-        color: white !important;
-        font-weight: bold;
-        border: none !important;
-        padding: 0.6rem 1rem !important;
-        border-radius: 8px !important;
-    }
-
-    .stButton>button:hover {
-        background-color: #1e4934 !important;
-    }
-
-    /* File uploader container */
-    [data-testid="stFileUploader"] {
-        background-color: #fff !important;
-        border-radius: 10px !important;
-        border: 1px solid #e0e0e0 !important;
-        padding: 1rem !important;
-    }
-
-    /* Force light mode even on iOS dark theme */
-    @media (prefers-color-scheme: dark) {
-        html, body {
-            background-color: #fff8f9 !important;
-            color: #000 !important;
-        }
-    }
-    </style>
+}
+</style>
 """, unsafe_allow_html=True)
 
 # ---------------- Step 0: Welcome ----------------
