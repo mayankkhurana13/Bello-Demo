@@ -105,7 +105,7 @@ def edge_lock_mask(img: Image.Image, thickness_px: int = 6, canny1: int = 80, ca
 def boxes_mask(img: Image.Image, boxes: List[Dict], pad_px: int = 12, blur_px: int = 6) -> Image.Image:
     w, h = img.size
     base = Image.new("L", (w, h), 255)  # opaque/locked
-    draw = ImageDraw.Draw(base)  # <<< SYNTAX ERROR FIXED HERE
+    draw = ImageDraw.Draw(base)
     for b in boxes:
         x0 = max(0, int(b["x"] * w) - pad_px)
         y0 = max(0, int(b["y"] * h) - pad_px)
@@ -300,20 +300,45 @@ def inject_bello_theme():
 html, body, [data-testid="stAppViewContainer"], .stApp {
     background-color: #fff8f9 !important;
     color-scheme: light !important;
-    color: #2d3436 !important; /* Added to fix invisible text on dark mode */
+    color: #2d3436 !important; 
 }
 
-/* Inputs + buttons */
-input, select, textarea, .stFileUploader, .stButton>button {
+/* --- AGGRESSIVE WIDGET FIXES FOR MOBILE DARK MODE --- */
+
+/* Fix st.radio button labels (invisible text) */
+[data-testid="stRadio"] label span {
+    color: #2d3436 !important;
+}
+
+/* Fix st.selectbox (dark box) */
+[data-testid="stSelectbox"] div[data-baseweb="select"] > div {
+     background-color: #ffffff !important;
+     border-color: #dcdcdc !important;
+     border-radius: 8px !important;
+}
+/* Fix st.selectbox text color */
+[data-testid="stSelectbox"] div[data-baseweb="select"] span, 
+[data-testid="stSelectbox"] div[data-baseweb="select"] input {
+    color: #2d3436 !important;
+}
+
+/* Fix st.file_uploader text */
+[data-testid="stFileUploader"] label, [data-testid="stFileUploader"] small {
+    color: #2d3436 !important;
+}
+
+/* General inputs (fallback) */
+input, select, textarea {
     background-color: #ffffff !important;
     color: #2d3436 !important;
-    border-radius: 8px !important;
     border: 1px solid #dcdcdc !important;
 }
+/* --- END AGGRESSIVE FIXES --- */
+
 
 /* Primary buttons */
 .stButton > button {
-    background-color: #2d3436 !important; /* Back to dark grey for consistency */
+    background-color: #2d3436 !important; 
     color: #ffffff !important;
     font-weight: 600 !important;
     border: none !important;
@@ -322,10 +347,10 @@ input, select, textarea, .stFileUploader, .stButton>button {
     transition: background-color 0.2s ease-in-out !important;
 }
 .stButton > button:hover {
-    background-color: #4a5457 !important; /* Darker hover for consistency */
+    background-color: #4a5457 !important; 
 }
 
-/* File uploader card */
+/* File uploader card (already dark text, but good to keep) */
 [data-testid="stFileUploader"] {
     background-color: #ffffff !important;
     border-radius: 10px !important;
@@ -337,7 +362,7 @@ input, select, textarea, .stFileUploader, .stButton>button {
 @media (prefers-color-scheme: dark) {
   html, body {
     background-color: #fff8f9 !important;
-    color: #2d3436 !important; /* Added to fix invisible text */
+    color: #2d3436 !important; 
   }
 }
 </style>
