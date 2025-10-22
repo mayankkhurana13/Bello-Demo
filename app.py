@@ -292,47 +292,54 @@ if "step" not in ss:
 
 # ---------------- Pastel Theme CSS (Mobile-fixed) ----------------
 st.markdown("""
-<style>
-  :root {
-    --bello-bg: #fff8f9;
-    --bello-green: #2d6a4f;
-    --bello-green-dark: #235742;
-    --bello-text: #2b2b2b;
-    --bello-card: #ffffff;
-    --bello-border: #e9ecef;
-  }
-  html, body, .stApp, [data-testid="stAppViewContainer"] {
-    background-color: var(--bello-bg) !important;
-    color: var(--bello-text);
-  }
-  .block-container {
-    padding: 1rem !important;
-    max-width: 900px;
-    margin: auto;
-  }
-  /* Buttons */
-  .stButton>button {
-    background: var(--bello-green);
-    color:#fff; border:none; border-radius:12px;
-    padding:0.65rem 1.2rem; font-weight:600;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
-  }
-  .stButton>button:hover { background: var(--bello-green-dark); }
-  .stButton>button:disabled { background:#cdd6d3; color:#6d7571; }
-  /* Inputs & cards */
-  .stFileUploader, .stSelectbox, .stRadio, .stTextInput, .stTextArea { background: #ffffff10; }
-  .stTextInput>div>div>input {
-    background: var(--bello-card); border-radius: 10px; border: 1px solid var(--bello-border);
-    padding: 0.6rem 0.8rem;
-  }
-  .stSelectbox>div>div>div, .stRadio, .stFileUploader>div>div {
-    background: var(--bello-card); border-radius: 10px; border: 1px solid var(--bello-border);
-  }
-  /* Titles */
-  h1, h2, h3, h4, h5 { color: #243d30; }
-  /* Video */
-  video { border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.08); width: 100%; height: auto; }
-</style>
+# Force Streamlit to use a light pastel Bello Foyer theme
+st.markdown("""
+    <style>
+    html, body, [data-testid="stAppViewContainer"] {
+        background-color: #fff8f9 !important;
+        color-scheme: light !important;
+    }
+    :root {
+        color-scheme: light;
+    }
+
+    /* Fix widgets on mobile */
+    input, select, textarea, .stFileUploader, .stButton>button {
+        background-color: #ffffff !important;
+        color: #2d3436 !important;
+        border-radius: 8px !important;
+        border: 1px solid #dcdcdc !important;
+    }
+
+    .stButton>button {
+        background-color: #2d6a4f !important;
+        color: white !important;
+        font-weight: bold;
+        border: none !important;
+        padding: 0.6rem 1rem !important;
+        border-radius: 8px !important;
+    }
+
+    .stButton>button:hover {
+        background-color: #1e4934 !important;
+    }
+
+    /* File uploader container */
+    [data-testid="stFileUploader"] {
+        background-color: #fff !important;
+        border-radius: 10px !important;
+        border: 1px solid #e0e0e0 !important;
+        padding: 1rem !important;
+    }
+
+    /* Force light mode even on iOS dark theme */
+    @media (prefers-color-scheme: dark) {
+        html, body {
+            background-color: #fff8f9 !important;
+            color: #000 !important;
+        }
+    }
+    </style>
 """, unsafe_allow_html=True)
 
 # ---------------- Step 0: Welcome ----------------
