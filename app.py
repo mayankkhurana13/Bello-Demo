@@ -186,15 +186,48 @@ if ss.step != 0:
 
 # --------------------- UI ---------------------
 
-# Step 0 — Splash Screen
+# Step 0 — Splash Screen (fixed rendering + scroll reset)
 if ss.step == 0:
-    splash_bg_path = "assets/splash_background.jpg"
-    splash_bg_data_url = data_url(splash_bg_path)
-    logo_data_url = data_url("assets/bello_logo.png")
-    st.markdown(f""" <style> /* Hide default Streamlit UI */ .block-container {{ padding: 0 !important; margin: 0 !important; max-width: none !important; }} header, footer {{ display: none !important; }} #root > div:first-child {{ height: 100vh; display: flex; justify-content: center; align-items: center; background-image: url('{splash_bg_data_url or ""}'); background-size: cover; background-position: center; }} .splash-logo {{ max-width: 250px; animation: fadeIn 1.5s ease-in-out; }} @keyframes fadeIn {{ from {{ opacity: 0; transform: scale(0.9); }} to {{ opacity: 1; transform: scale(1); }} }} </style> """, unsafe_allow_html=True)
-    if logo_data_url: st.markdown(f'<img src="{logo_data_url}" class="splash-logo">', unsafe_allow_html=True)
-    else: st.markdown("<h1 style='color: #2d6a4f;'>Bello Foyer</h1>", unsafe_allow_html=True)
-    time.sleep(2); ss.step = 1; st.rerun()
+    splash_bg = data_url("assets/splash_background.jpg") or ""
+    logo_url = data_url("assets/bello_logo.png")
+
+    # Inject minimal splash HTML/CSS inline (no Streamlit containers)
+    st.markdown(f"""
+        <style>
+        header, footer {{visibility: hidden;}}
+        .block-container {{
+            padding: 0 !important;
+            margin: 0 !important;
+            max-width: none !important;
+        }}
+        body {{
+            background-image: url('{splash_bg}');
+            background-size: cover;
+            background-position: center;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }}
+        .splash-logo {{
+            max-width: 260px;
+            animation: fadeIn 1.5s ease-in-out;
+        }}
+        @keyframes fadeIn {{
+            from {{opacity: 0; transform: scale(0.9);}}
+            to {{opacity: 1; transform: scale(1);}}
+        }}
+        </style>
+        {"<img src='"+logo_url+"' class='splash-logo'/>" if logo_url else "<h1>Bello Foyer</h1>"}
+        <script>
+            window.scrollTo(0, 0);
+        </script>
+    """, unsafe_allow_html=True)
+
+    # Short delay then continue
+    time.sleep(2)
+    ss.step = 1
+    st.rerun()
 
 # --- All other steps go inside the main_container ---
 else:
