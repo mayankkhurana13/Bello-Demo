@@ -297,11 +297,9 @@ else:
              st.warning("Could not generate design profile. Using default style: Modern."); ss.customer_profile = "Modern style."
 
         st.markdown("---"); st.markdown("<h3 style='text-align:center;'>Let's Transform Your Room</h3>", unsafe_allow_html=True)
-        col_upload, col_cam = st.columns(2)
-        with col_upload: uploaded_file = st.file_uploader("Upload Now", type=["jpg", "png", "webp"])
-        with col_cam: camera_file = st.camera_input("Open Camera") # Camera widget rendered here
-        input_file = camera_file if camera_file is not None else uploaded_file
-        if input_file: ss.uploaded_file = input_file
+uploaded_file = st.file_uploader("Upload Now", type=["jpg", "png", "webp"])
+if uploaded_file:
+    ss.uploaded_file = uploaded_file
         if ss.uploaded_file:
             st.image(ss.uploaded_file, caption="Your room", use_container_width=True)
             if st.button("Redesign My Room", type="primary", use_container_width=True):
