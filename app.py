@@ -412,13 +412,39 @@ else:
                  tags: List[str] = []; [tags.extend(ss.quiz_choices[k]) for k in sorted(ss.quiz_choices.keys()) if ss.quiz_choices[k]]
                  ss.customer_profile = generate_customer_profile(tags or ["modern"])
                  if not ss.customer_profile or "(Default due to error)" in ss.customer_profile or "Could not generate profile" in ss.customer_profile: raise ValueError("Invalid profile.")
-            with status_placeholder, st.spinner("⏳ Analyzing room..."): scene = analyze_room_architecture(img_bytes)
-            with status_placeholder, st.spinner("🎨 Creating brief..."): brief = create_design_brief(ss.customer_profile, scene)
-            with status_placeholder, st.spinner("🖼️ Preprocessing..."): png_bytes = preprocess_to_square_png(img_bytes)
-            with status_placeholder, st.spinner("✨ Generating design... (~30-60s)"): ss.styled_image_url = edit_room_image_with_brief(png_bytes, brief)
+
+            # --- AI Steps ---
+            with status_placeholder, st.spinner("⏳ Analyzing room..."):
+                scene = analyze_room_architecture(img_bytes) # This might raise ValueError now
+
+            with status_placeholder, st.spinner("🎨 Creating brief..."):
+                 # Check if analysis failed generically before proceeding
+                 if "Analysis failed" in scene or "Analysis unavailable" in scene :
+                      raise RuntimeError("Room analysis failed, cannot create brief.")
+                 brief = create_design_brief(ss.customer_profile, scene)
+
+            with status_placeholder, st.spinner("🖼️ Preprocessing..."):
+                 png_bytes = preprocess_to_square_png(img_bytes)
+
+            with status_placeholder, st.spinner("✨ Generating design... (~30-60s)"):
+                 ss.styled_image_url = edit_room_image_with_brief(png_bytes, brief)
+
+            # --- Success ---
             status_placeholder.success("✅ Done!"); time.sleep(1)
             ss.last_error = None; ss.step = 6; st.rerun()
-        except Exception as e: ss.last_error = str(e); ss.styled_image_url = None; ss.step = 6; st.rerun() # Go to results to show error
+
+        except ValueError as ve:
+             # Catch the specific error from analyze_room_architecture
+             ss.last_error = str(ve) # Store the user-friendly message
+             ss.styled_image_url = None
+             ss.step = 6 # Go to results to show this specific error
+             st.rerun()
+        except Exception as e:
+            # Catch all other unexpected errors
+            ss.last_error = f"An unexpected error occurred: {e}"
+            ss.styled_image_url = None;
+            ss.step = 6;
+            st.rerun() # Go to results to show the generic error
 
     elif ss.step == 6:
         st.markdown("<h2 style='text-align:center;'>Your AI-Styled Home</h2>", unsafe_allow_html=True)
