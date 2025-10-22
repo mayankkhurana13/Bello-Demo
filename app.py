@@ -279,35 +279,45 @@ else:
         if st.button("Back", use_container_width=True): ss.step = 1 if ss.step == 2 else ss.step - 1; st.rerun()
         st.markdown("</div>", unsafe_allow_html=True) # Close padding container
 
-    # Step 5 — Redesign Studio
-    elif ss.step == 5:
-        st.markdown("<h2 style='text-align:center;'>Your Redesign Studio</h2>", unsafe_allow_html=True)
-        profile_placeholder = st.empty();
-        if "customer_profile" not in ss or not ss.customer_profile:
-             with profile_placeholder, st.spinner("Analyzing style..."):
-                  tags: List[str] = []; [tags.extend(ss.quiz_choices[k]) for k in sorted(ss.quiz_choices.keys()) if ss.quiz_choices[k]]
-                  ss.customer_profile = generate_customer_profile(tags or ["modern"])
-        profile_placeholder.empty() # Clear placeholder regardless
+        # Step 5 — Redesign Studio
+        elif ss.step == 5:
+            st.markdown("<h2 style='text-align:center;'>Your Redesign Studio</h2>", unsafe_allow_html=True)
 
-        # Only display expander if profile was successfully generated (is not None and not default fallback)
-        if ss.customer_profile and "(Default due to error)" not in ss.customer_profile and "Could not generate profile" not in ss.customer_profile:
-             with st.expander("Your AI-Generated Design Profile", expanded=True): st.markdown(ss.customer_profile)
-        elif ss.customer_profile: # Show generated profile even if it's the fallback
-             st.info(ss.customer_profile) # Use info box for default/error profiles
-        else: # Handle case where generation failed completely
-             st.warning("Could not generate design profile. Using default style: Modern."); ss.customer_profile = "Modern style."
-
-        st.markdown("---"); st.markdown("<h3 style='text-align:center;'>Let's Transform Your Room</h3>", unsafe_allow_html=True)
-uploaded_file = st.file_uploader("Upload Now", type=["jpg", "png", "webp"])
-if uploaded_file:
-    ss.uploaded_file = uploaded_file
-        if ss.uploaded_file:
-            st.image(ss.uploaded_file, caption="Your room", use_container_width=True)
-            if st.button("Redesign My Room", type="primary", use_container_width=True):
-                ss.last_error = None; ss.image_description = None; ss.styled_image_url = None
-                ss.step = 5.5; st.rerun()
-        st.markdown("---")
-        if st.button("Back"): ss.step = 4; st.rerun()
+            # --- Generate or show design profile ---
+            profile_placeholder = st.empty()
+            if "customer_profile" not in ss or not ss.customer_profile:
+                with profile_placeholder, st.spinner("Analyzing your style..."):
+                    tags: List[str] = []
+                    for k in sorted(ss.quiz_choices.keys()):
+                        if ss.quiz_choices[k]:
+                            tags.extend(ss.quiz_choices[k])
+                    ss.customer_profile = generate_customer_profile(tags or ["modern"])
+            profile_placeholder.empty()
+    
+            if ss.customer_profile:
+                with st.expander("Your AI-Generated Design Profile", expanded=True):
+                    st.markdown(ss.customer_profile)
+    
+            st.markdown("---")
+            st.markdown("<h3 style='text-align:center;'>Let's Transform Your Room</h3>", unsafe_allow_html=True)
+    
+            # --- Upload only (no camera) ---
+            uploaded_file = st.file_uploader("Upload Now", type=["jpg", "jpeg", "png", "webp"])
+            if uploaded_file:
+                ss.uploaded_file = uploaded_file
+                st.image(uploaded_file, caption="Your room", use_container_width=True)
+    
+                if st.button("Redesign My Room", type="primary", use_container_width=True):
+                    ss.last_error = None
+                    ss.image_description = None
+                    ss.styled_image_url = None
+                    ss.step = 5.5
+                    st.rerun()
+    
+            st.markdown("---")
+            if st.button("Back"):
+                ss.step = 4
+                st.rerun()
 
     # Step 5.5 - Processing Screen
     elif ss.step == 5.5:
