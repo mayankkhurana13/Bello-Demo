@@ -126,7 +126,7 @@ def detect_placement_boxes(image_bytes: bytes) -> List[Dict]:
     )
     try:
         b64 = b64_image(image_bytes)
-        resp = client.chat_completions.create(  # fallback if preferred; but keep primary call below
+        resp = client.chat.completions.create(  # fallback if preferred; but keep primary call below
             model="gpt-4o",
             messages=[{
                 "role": "user",
@@ -281,7 +281,7 @@ if "step" not in ss:
     ss.style_goal = "Modern"
     ss.design_mode = "Revamp Full Room"
     ss.result = None
-    ss.history = []   # list of (description, image_url)
+    ss.history = []  # list of (description, image_url)
     ss.error = None
     # Advanced mask defaults
     ss.mask_blur = 6
@@ -312,7 +312,7 @@ input, select, textarea, .stFileUploader, .stButton>button {
 
 /* Primary buttons */
 .stButton > button {
-    background-color: #2d6a4f !important;
+    background-color: #9dbfa5 !important; /* <<< CHANGED from dark green to soft sage */
     color: #ffffff !important;
     font-weight: 600 !important;
     border: none !important;
@@ -321,7 +321,7 @@ input, select, textarea, .stFileUploader, .stButton>button {
     transition: background-color 0.2s ease-in-out !important;
 }
 .stButton > button:hover {
-    background-color: #1e4934 !important;
+    background-color: #8aa891 !important; /* <<< CHANGED from dark green to darker soft sage */
 }
 
 /* File uploader card */
@@ -352,7 +352,7 @@ if ss.step == 0:
     if os.path.exists(logo_path):
         st.image(logo_path, width=180)
     else:
-        st.markdown("<h1 style='color:#2d6a4f;'>Bello Foyer</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='color:#9dbfa5;'>Bello Foyer</h1>", unsafe_allow_html=True) # <<< CHANGED from dark green
 
     intro_video = "assets/intro.mp4"
     if os.path.exists(intro_video):
