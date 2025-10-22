@@ -131,13 +131,50 @@ def analyze_room_architecture(image_bytes: bytes) -> str:
 # ***** ENSURE THIS FUNCTION DEFINITION IS PRESENT *****
 @st.cache_data
 def create_design_brief(profile: str, scene_report: str) -> str:
-    """Turn style + fixed architecture into a photoreal brief that gpt-image-1 understands."""
+    """
+    Generate an image-editing brief that preserves architecture completely and
+    replaces only movable furniture and decor based on style preferences.
+    """
     try:
-        resp = client.chat.completions.create( model="gpt-4o", messages=[ {"role": "system", "content": "You are a world-class interior designer. Produce a single-paragraph brief."}, {"role": "user", "content": f"Create a photorealistic brief starting with 'A photorealistic professional photograph of...'. Keep ALL architecture (walls, floor, ceiling, windows, doors, layout, fixed lights) EXACTLY the same. Only change MOVABLE items (furniture, rugs, decor, art, plants). Make no structural changes. \n\nUser Style Preference: {profile}\n\nScene Report (Unchangeable Structure): {scene_report}" }], max_tokens=700)
-        brief = resp.choices[0].message.content.strip()
-        brief += "\n\nIMPORTANT: Fit scale/perspective exactly. Place items only in transparent mask area. Do not change architecture."
-        return brief
-    except Exception as e: print(f"Design Brief Error: {e}"); return f"A photorealistic professional photograph of a room matching the user's taste: {profile}. Architecture must remain identical."
+        prompt = f"""
+You are an expert interior design visualizer.
+Generate a single, photorealistic scene description that will guide an image model
+to restyle the given photo **without changing the fixed structure**.
+
+Strict non-edit rules (MUST NOT be changed):
+- Walls, paint, windows, curtains, blinds, floor, ceiling, doors, and lighting fixtures
+- Room layout, wall color, flooring material, or window size/shape
+
+Editable elements (CAN be replaced or improved):
+- Furniture (sofa, chair, table, bed, shelves, console)
+- Rugs, cushions, art, lamps, plants, decor, accessories
+- Materials, textures, color palette of movable items only
+
+Ensure the new furniture fits perfectly into the same lighting, scale, and perspective.
+Keep the original walls, flooring, windows, and ceiling visible exactly as in the source image.
+Describe only **what replaces or enhances the existing movable elements**, not the architecture.
+
+User Style Preference: {profile}
+Fixed Architectural Summary: {scene_report}
+
+Your output should begin with:
+"A photorealistic professional photograph of the same room, with ..."
+
+Do not mention 'render', 'AI', 'digital art', or 'reconstruction'.
+        """
+        resp = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are a precise design visualizer. Follow instructions literally."},
+                {"role": "user", "content": prompt},
+            ],
+            max_tokens=700,
+        )
+        return resp.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"Design Brief Error: {e}")
+        return "A photorealistic photograph of the same room, keeping all architecture identical but replacing furniture and decor to match the user's taste: {profile}"
+
 # ***** END OF create_design_brief definition *****
 
 def edit_room_image_with_brief(processed_png_bytes: bytes, brief: str) -> str:
