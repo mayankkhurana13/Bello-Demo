@@ -181,11 +181,8 @@ if "step" not in ss:
 
 # --------------------- Main App Container / UI Logic ---------------------
 
-# Pre-calculate splash background URL
+# Inject CSS globally (moved outside conditional logic)
 splash_bg_url = data_url("assets/splash_background.jpg") or ""
-
-# Inject CSS globally first, before conditional rendering
-# Escape all literal curly braces in CSS with {{ }}
 st.markdown(f"""
 <style>
     /* Base styles */
@@ -197,11 +194,15 @@ st.markdown(f"""
      header[data-testid="stHeader"], footer {{ display: {'none' if ss.step == 0 else 'inherit !important'}; }}
 
     /* Splash Screen Specific Styles */
-    .splash-body {{ height: 100vh; overflow: hidden; }} /* Apply to body during splash */
-    .splash-container {{ padding: 0 !important; margin: 0 !important; max-width: none !important; height: 100vh;
-                       display: flex; justify-content: center; align-items: center;
-                       background-image: url('{splash_bg_url}');
-                       background-size: cover; background-position: center; }}
+    /* Target the container Streamlit creates for st.markdown when step is 0 */
+    div[data-testid="stAppViewContainer"] > section > div.block-container {{
+         height: {'100vh' if ss.step == 0 else 'auto'};
+         display: {'flex' if ss.step == 0 else 'block'};
+         justify-content: {'center' if ss.step == 0 else 'flex-start'};
+         align-items: {'center' if ss.step == 0 else 'stretch'};
+         background-image: {'url("'+splash_bg_url+'")' if ss.step == 0 else 'none'};
+         background-size: cover; background-position: center;
+    }}
     .splash-logo {{ max-width: 250px; animation: fadeIn 1.5s ease-in-out; }}
     @keyframes fadeIn {{ from {{ opacity: 0; transform: scale(0.9); }} to {{ opacity: 1; transform: scale(1); }} }}
 
@@ -261,20 +262,12 @@ st.markdown(f"""
 
 # Step 0 — Splash Screen
 if ss.step == 0:
-    # Apply body class for splash
-    st.markdown('<body class="splash-body">', unsafe_allow_html=True)
-    # Container for splash content
-    st.markdown('<div class="splash-container">', unsafe_allow_html=True)
-
+    # The CSS above handles the full screen background and logo centering
     logo_url = data_url("assets/bello_logo.png")
     if logo_url:
         st.markdown(f'<img src="{logo_url}" class="splash-logo">', unsafe_allow_html=True)
     else:
-        st.markdown("<h1 style='color: #2d6a4f;'>Bello Foyer</h1>", unsafe_allow_html=True)
-
-    st.markdown('</div>', unsafe_allow_html=True)
-    # Remove body class after render (hacky, might not be needed if rerun works fast)
-    # st.markdown('<body class="">', unsafe_allow_html=True)
+        st.markdown("<h1 style='color: #2d6a4f;'>Bello Foyer</h1>", unsafe_allow_html=True) # Fallback
 
     time.sleep(2)
     ss.step = 1
@@ -464,69 +457,4 @@ else:
 
     # Close main container div
     st.markdown('</div>', unsafe_allow_html=True)
-
-# --------------------- Custom CSS for Layout and Style ---------------------
-# Simplified CSS Injection - only include styles relevant now
-st.markdown(f"""
-<style>
-    /* Base styles */
-    body {{ background:#fff8f9; font-family: 'Inter', sans-serif; margin: 0; }}
-    /* Control padding for non-splash screens */
-    .block-container {{ padding: {'0' if ss.step == 0 else '1rem'} !important; margin: 0 !important; max-width: 100% !important; }}
-    .main-container {{ max-width: {'none' if ss.step == 0 else '900px'}; margin: auto; padding: 0; }} /* Remove internal padding */
-     /* Hide Streamlit elements */
-     header[data-testid="stHeader"], footer {{ display: {'none' if ss.step == 0 else 'inherit !important'}; }}
-
-    /* --- Welcome Screen Header (Step 1) --- */
-    .welcome-header-simple {{ text-align: center; margin-bottom: 2rem; padding-top: 1rem; }}
-
-    /* --- Welcome Screen Content (Step 1) --- */
-    .welcome-content {{ margin-top: 1rem; }}
-    .welcome-headline {{ font-size: 2.2rem; margin-bottom: 1.5rem; line-height: 1.2; text-align: left; }}
-    .welcome-text {{ font-size: 1rem; color: #495057; margin-top: 1.5rem; }}
-    .welcome-content .stButton {{ margin-top: 1rem; margin-bottom: 1rem; }}
-
-    /* --- Quiz Container Padding (Steps 2-4) --- */
-    .quiz-container {{ padding-top: 2rem; }}
-
-    /* Results screen styles */
-    .image-description {{ text-align: center; font-style: italic; color: #555; margin: 0.5rem 1rem 1.5rem 1rem; }}
-
-    /* Shop the Look styles */
-    .shop-item-line {{ display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0; border-bottom: 1px solid #eee; }}
-    .item-name {{ flex-grow: 1; margin-right: 1rem; }} .item-price {{ font-weight: bold; white-space: nowrap; }}
-
-    /* --- Responsive Design for Mobile --- */
-    @media (max-width: 768px) {{
-        .main-container {{ padding: {'0' if ss.step == 0 else '1rem 0.5rem'}; }}
-        .welcome-header-simple img {{ width: 100px; }}
-        .welcome-headline {{ font-size: 1.8rem; text-align: center; }}
-        .welcome-text {{ font-size: 0.9rem; text-align: center; margin-bottom: 1rem; margin-top: 0; }}
-         /* Mobile stacking order for Welcome Screen */
-         div[data-testid="stHorizontalBlock"] {{
-             flex-direction: column !important; /* Force column for all st.columns on mobile */
-         }}
-         /* Welcome screen columns specifically */
-         .welcome-content > div[data-testid="stHorizontalBlock"] > div:nth-child(1) {{ order: 2; width: 100% !important; margin-top: 1.5rem; }} /* Text Block */
-         .welcome-content > div[data-testid="stHorizontalBlock"] > div:nth-child(2) {{ order: 1; width: 100% !important; }} /* Video Block */
-
-        .quiz-container {{ padding-top: 1rem; }}
-        .shop-item-line {{ padding: 0.7rem 0; }}
-        .stButton>button[key*="remove_"] {{ padding: 0.1rem 0.4rem; font-size: 1rem; }}
-    }}
-
-    /* Button Styles */
-    .stButton>button {{ background:#2d6a4f; border-radius: 8px; color: white; padding: 0.7rem 1.1rem; border: none; font-weight: bold; transition: background-color 0.2s; }}
-    .stButton>button:hover {{ background: #1e4934; filter: brightness(110%); }}
-    .stButton>button:disabled {{ background: #adb5bd; color: #6c757d; cursor: not-allowed; opacity: 0.7; }} /* Fixed: Use 0.7 */
-    .stButton>button[kind="secondary"] {{ background:#e9ecef; color:#343a40; }}
-    .stButton>button[kind="secondary"]:hover {{ background: #ced4da; }}
-    .stButton>button[key*="remove_"] {{ background: none; color: #dc3545; padding: 0.1rem 0.4rem; font-size: 1rem; border: none; box-shadow: none; line-height: 1; }}
-    .stButton>button[key*="remove_"]:hover {{ background: none; color: #c82333; }}
-    /* Remove focus outline/border */
-    .stButton>button:focus, .stButton>button:active {{ outline: none !important; box-shadow: none !important; border: none !important; }}
-    button:focus {{ outline: none !important; }}
-
-</style>
-""", unsafe_allow_html=True)
 
