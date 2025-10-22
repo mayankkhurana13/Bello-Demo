@@ -15,7 +15,7 @@ import streamlit as st
 from openai import OpenAI
 
 # --------------------- Page Config ---------------------
-# Use wide layout to better control centering with CSS
+# Use wide layout initially, but control width with containers
 st.set_page_config(page_title="Bello Foyer – AI Styling Demo", page_icon="🏡", layout="wide")
 
 # --------------------- Load API Key ---------------------
@@ -41,27 +41,32 @@ client = OpenAI(api_key=api_key)
 def data_url(path: str) -> Optional[str]:
     """Return data:image/...;base64,... for a local file, or None if missing."""
     if not os.path.exists(path):
-        # Don't show warning in production, just return None
-        # st.warning(f"Asset not found: {path}")
         print(f"Warning: Asset not found at {path}")
         return None
     mime, _ = mimetypes.guess_type(path)
     mime = mime or "image/jpeg" # Default mime type
-    with open(path, "rb") as f:
-        b64 = base64.b64encode(f.read()).decode("utf-8")
-    return f"data:{mime};base64,{b64}"
+    try:
+        with open(path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode("utf-8")
+        return f"data:{mime};base64,{b64}"
+    except Exception as e:
+        print(f"Error reading or encoding file {path}: {e}")
+        return None
+
 
 def display_video_autoplay(path: str):
     video_data = data_url(path) # Use data_url to get base64
     if video_data:
         st.markdown(
             f"""
-            <video width="100%" autoplay muted playsinline loop style="border-radius:16px; object-fit: cover; height: 100%;">
+            <video width="100%" autoplay muted playsinline loop style="border-radius:16px; object-fit: cover; height: 100%; max-height: 400px;">
               <source src="{video_data}" type="video/mp4" />
+              Your browser does not support the video tag.
             </video>
             """,
             unsafe_allow_html=True,
         )
+    # else: st.warning("Intro video asset missing.") # Optional: uncomment for debugging
 
 def make_architecture_preserving_mask(size: tuple[int, int]) -> bytes:
     """
@@ -71,217 +76,99 @@ def make_architecture_preserving_mask(size: tuple[int, int]) -> bytes:
     w, h = size
     mask = Image.new("RGBA", (w, h), (0, 0, 0, 255))  # OPAQUE = protected
     draw = ImageDraw.Draw(mask)
-
-    # Define editable zone (transparent)
-    left = int(w * 0.15)
-    right = int(w * 0.85)
-    top = int(h * 0.55)
-    bottom = int(h * 0.95)
-
+    left = int(w * 0.15); right = int(w * 0.85)
+    top = int(h * 0.55); bottom = int(h * 0.95)
     draw.rectangle([left, top, right, bottom], fill=(0, 0, 0, 0))  # TRANSPARENT = editable
-
-    buf = io.BytesIO()
-    mask.save(buf, format="PNG")
-    return buf.getvalue()
+    buf = io.BytesIO(); mask.save(buf, format="PNG"); return buf.getvalue()
 
 
 # --------------------- AI Calls ---------------------
 # Removed show_spinner from decorators as calls are wrapped in spinners in Step 5.5
 @st.cache_data
 def generate_customer_profile(style_tags: List[str]) -> str:
-    """Small prompt that turns chosen tags into a concise style profile paragraph."""
     tags_string = ", ".join(sorted(set(style_tags))) if style_tags else "modern, neutral, balanced"
-    prompt = (
-        "Based on these interior design style tags, write a very concise summary (2-3 lines maximum) "
-        "of the user's style profile. Start the summary with 'Your design profile suggests a love for...'. "
-        "This summary will guide an AI image generator.\n\n"
-        f"Selected Style Tags: {tags_string}"
-    )
+    prompt = f"Write a very concise summary (2-3 lines max) of a user's interior design style based on these tags: {tags_string}. Start with 'Your design profile suggests...'"
     try:
-        resp = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": "You are a helpful interior design assistant skilled at brevity."},
-                {"role": "user", "content": prompt},
-            ],
-            max_tokens=100,
-        )
+        resp = client.chat.completions.create( model="gpt-4o", messages=[ {"role": "system", "content": "You are a helpful interior design assistant skilled at brevity."}, {"role": "user", "content": prompt}, ], max_tokens=100)
         message = resp.choices[0].message
         return message.content.strip() if message and message.content else "Could not generate profile content."
-    except Exception as e:
-        # Avoid showing Streamlit error directly in cached function
-        # Log error instead (e.g., import logging; logging.error(...))
-        print(f"Profile Generation Error: {e}")
-        return "Your design profile suggests a love for calm, modern spaces. (Default due to error)"
+    except Exception as e: print(f"Profile Generation Error: {e}"); return "Your design profile suggests a love for calm, modern spaces. (Default due to error)"
 
 @st.cache_data
 def analyze_room_architecture(image_bytes: bytes) -> str:
-    """Use vision to describe fixed architectural features only."""
     b64 = base64.b64encode(image_bytes).decode("utf-8")
     try:
-        resp = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{
-                "role": "user",
-                "content": [
-                    {"type": "text", "text":
-                        "Analyze this room's permanent architectural features (layout, flooring, windows, doors, fixed lighting). "
-                        "Do NOT describe movable furniture or decor. Keep it concise (2-3 sentences max)."},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
-                ]
-            }],
-            max_tokens=150,
-        )
+        resp = client.chat.completions.create( model="gpt-4o", messages=[{"role": "user", "content": [ {"type": "text", "text": "Analyze permanent architectural features (layout, floor, windows, doors, lights). Ignore furniture/decor. Be concise (2-3 sentences max)."}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}} ]}], max_tokens=150)
         message = resp.choices[0].message
         return message.content.strip() if message and message.content else "Could not analyze room features."
-    except Exception as e:
-        print(f"Room Analysis Error: {e}")
-        return "Analysis unavailable. Assuming a standard living room with windows and neutral walls."
+    except Exception as e: print(f"Room Analysis Error: {e}"); return "Analysis unavailable."
 
 @st.cache_data
 def create_design_brief(profile: str, scene_report: str) -> str:
-    """Turn style + fixed architecture into a photoreal brief that gpt-image-1 understands."""
     try:
-        resp = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system",
-                 "content": "You are a world-class interior designer. Produce a single-paragraph brief for an AI image generator."},
-                {"role": "user",
-                 "content": (
-                     "Create a photorealistic brief starting with 'A photorealistic professional photograph of...'. "
-                     "The resulting image must keep ALL architecture exactly the same: walls, floor, ceiling, windows, doors, fixed lighting, and layout. "
-                     "Only change MOVABLE items (furniture, rugs, decor, art, curtains, plants). Do not modify wall color, floor material, window size or placement. "
-                     "Obey the fixed architectural elements in the scene report; make no structural/civil changes."
-                     f"\n\nUser Style Preference: {profile}\n\n"
-                     f"Scene Report (Unchangeable Structure): {scene_report}"
-                 )}
-            ],
-            max_tokens=700,
-        )
+        resp = client.chat.completions.create( model="gpt-4o", messages=[ {"role": "system", "content": "You are a world-class interior designer. Produce a single-paragraph brief."}, {"role": "user", "content": f"Create a photorealistic brief starting with 'A photorealistic professional photograph of...'. Keep ALL architecture (walls, floor, ceiling, windows, doors, layout, fixed lights) EXACTLY the same. Only change MOVABLE items (furniture, rugs, decor, art, plants). Make no structural changes. \n\nUser Style Preference: {profile}\n\nScene Report (Unchangeable Structure): {scene_report}" }], max_tokens=700)
         brief = resp.choices[0].message.content.strip()
-        brief += (
-            "\n\nIMPORTANT INSTRUCTION: When adding decor or furniture, fit the scale and perspective "
-            "of the existing room exactly as in the photo. Place items only within the transparent mask area "
-            "and do not change architectural surfaces (walls, floor, ceiling, windows, or lighting)."
-        )
+        brief += "\n\nIMPORTANT: Fit scale/perspective exactly. Place items only in transparent mask area. Do not change architecture."
         return brief
-    except Exception as e:
-        print(f"Design Brief Error: {e}")
-        return (
-            "A photorealistic professional photograph of a modern, calm living room with soft natural light, "
-            "matching the user's taste. Ensure architecture remains identical."
-        )
+    except Exception as e: print(f"Design Brief Error: {e}"); return f"A photorealistic professional photograph of a room matching the user's taste: {profile}. Architecture must remain identical."
 
-# Removed cache and spinner from edit function
 def edit_room_image_with_brief(processed_png_bytes: bytes, brief: str) -> str:
-    """
-    Use the *masked edit* endpoint. OPAQUE mask = preserved pixels, TRANSPARENT = editable.
-    Returns a URL that Streamlit can display.
-    """
-    img_io = io.BytesIO(processed_png_bytes)
-    img_io.name = "input.png"
-    mask_bytes = make_architecture_preserving_mask((1024, 1024))
-    mask_io = io.BytesIO(mask_bytes)
-    mask_io.name = "mask.png"
-
+    img_io = io.BytesIO(processed_png_bytes); img_io.name = "input.png"
+    mask_bytes = make_architecture_preserving_mask((1024, 1024)); mask_io = io.BytesIO(mask_bytes); mask_io.name = "mask.png"
     try:
-        edit = client.images.edit(
-            model="gpt-image-1",
-            image=img_io,
-            mask=mask_io,
-            prompt=brief,
-            size="1024x1024",
-            n=1,
-        )
-        url = getattr(edit.data[0], "url", None)
-        if url:
-             return url
-        b64 = getattr(edit.data[0], "b64_json", None)
-        if b64:
-             return "data:image/png;base64," + b64
+        edit = client.images.edit( model="gpt-image-1", image=img_io, mask=mask_io, prompt=brief, size="1024x1024", n=1)
+        url = getattr(edit.data[0], "url", None); b64 = getattr(edit.data[0], "b64_json", None)
+        if url: return url
+        if b64: return "data:image/png;base64," + b64
         raise RuntimeError("Image API returned neither URL nor b64_json (edit).")
-    except Exception as e:
-        # Raise the specific error for handling in the calling step
-        raise RuntimeError(f"Image generation failed: {e}") from e
+    except Exception as e: raise RuntimeError(f"Image generation failed: {e}") from e
 
 def preprocess_to_square_png(image_bytes: bytes) -> bytes:
-    """Center-crop to square and resize to 1024x1024 PNG."""
     try:
-        img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
-        w, h = img.size
-        if w != h:
-            side = min(w, h)
-            left = (w - side) // 2
-            top = (h - side) // 2
-            img = img.crop((left, top, left + side, top + side))
-        if img.size != (1024, 1024):
-            img = img.resize((1024, 1024), Image.Resampling.LANCZOS)
-        out = io.BytesIO()
-        img.save(out, format="PNG")
-        return out.getvalue()
-    except Exception as e:
-        st.error(f"Image preprocessing failed: {e}")
-        raise
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGBA"); w, h = img.size
+        if w != h: side = min(w, h); left = (w - side) // 2; top = (h - side) // 2; img = img.crop((left, top, left + side, top + side))
+        if img.size != (1024, 1024): img = img.resize((1024, 1024), Image.Resampling.LANCZOS)
+        out = io.BytesIO(); img.save(out, format="PNG"); return out.getvalue()
+    except Exception as e: st.error(f"Image preprocessing failed: {e}"); raise
 
 @st.cache_data(show_spinner="Describing image...")
 def describe_image_content(image_url: str) -> str:
-    """Uses AI to provide a concise 2-3 line description of the image content."""
     if not image_url: return "No image to describe."
     try:
-        image_input = {"url": image_url} # Works for both data and regular URLs with GPT-4o
-        prompt = "Describe the interior design in this image in 2-3 concise sentences. Focus on furniture, decor, and overall style."
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "user", "content": [ {"type": "text", "text": prompt}, {"type": "image_url", "image_url": image_input} ]}],
-            max_tokens=100
-        )
+        image_input = {"url": image_url}
+        prompt = "Describe the interior design in this image in 2-3 concise sentences (focus on style, furniture, decor)."
+        response = client.chat.completions.create( model="gpt-4o", messages=[{"role": "user", "content": [ {"type": "text", "text": prompt}, {"type": "image_url", "image_url": image_input} ]}], max_tokens=100)
         return response.choices[0].message.content.strip()
-    except Exception as e:
-        print(f"Image description failed: {e}")
-        return "A beautiful AI-styled room with a modern touch."
+    except Exception as e: print(f"Image description failed: {e}"); return "A beautiful AI-styled room."
 
 @st.cache_data(show_spinner="Identifying products...")
 def recognize_products_in_image(image_url: str) -> List[Dict[str, Any]]:
-    """Uses AI to identify products in the generated image."""
     if not image_url: return []
     try:
         image_input = {"url": image_url}
-        prompt = """
-        Analyze the provided interior design image. Identify the main furniture and decor items visible.
-        For each item, provide a short descriptive name (e.g., 'Mid-Century Modern Armchair')
-        and estimate a plausible price in Indian Rupees (INR), formatted as just the number (e.g., 45000).
-        Return results as a JSON list of objects, each with 'name' and 'price' keys.
-        Example: [{"name": "Velvet Cushion", "price": 1500}, {"name": "Oak Coffee Table", "price": 25000}]
-        Limit to 5-7 main items.
-        """
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "user", "content": [ {"type": "text", "text": prompt}, {"type": "image_url", "image_url": image_input} ]}],
-            response_format={"type": "json_object"},
-            max_tokens=1000
-        )
+        prompt = "Analyze the interior design image. Identify main furniture/decor. Provide name and estimated INR price (number only) for each as JSON list: [{'name': 'X', 'price': N}, ...]. Limit 5-7 items."
+        response = client.chat.completions.create( model="gpt-4o", messages=[{"role": "user", "content": [ {"type": "text", "text": prompt}, {"type": "image_url", "image_url": image_input} ]}], response_format={"type": "json_object"}, max_tokens=1000)
         content = response.choices[0].message.content
         try:
             result_data = json.loads(content)
             product_list_key = next((key for key in result_data if isinstance(result_data.get(key), list)), None)
             products = result_data[product_list_key] if product_list_key else (result_data if isinstance(result_data, list) else [])
-        except (json.JSONDecodeError, Exception) as parse_e:
-            st.warning(f"Error parsing AI product response: {parse_e}. Using placeholders.")
-            products = []
+        except (json.JSONDecodeError, Exception) as parse_e: st.warning(f"Error parsing products: {parse_e}. Placeholders used."); products = []
         final_products = []
         for i, p in enumerate(products):
             if isinstance(p, dict) and 'name' in p and 'price' in p:
                 try: final_products.append({"id": i + 1, "name": str(p['name']), "price": int(p['price'])})
                 except (ValueError, TypeError): continue
+        if not final_products: raise ValueError("No valid products parsed.") # Trigger fallback if parsing fails badly
         return final_products
     except Exception as e:
         print(f"AI Product Recognition Failed: {e}")
-        return [ {"id": 1, "name": "Modern Sectional Sofa", "price": random.randint(35000, 85000)}, {"id": 2, "name": "Textured Area Rug", "price": random.randint(7000, 22000)}, {"id": 3, "name": "Floor Lamp", "price": random.randint(3000, 9000)}]
+        return [ {"id": 1, "name": "Sofa", "price": random.randint(35000, 85000)}, {"id": 2, "name": "Rug", "price": random.randint(7000, 22000)}, {"id": 3, "name": "Lamp", "price": random.randint(3000, 9000)}]
 
 # --------------------- Session ---------------------
 ss = st.session_state
 if "step" not in ss:
+    # Initialize all session state variables used
     ss.step = 0
     ss.quiz_choices = {2: None, 3: None, 4: None}
     ss.customer_profile = None
@@ -301,89 +188,33 @@ if ss.step != 0:
 
 # Step 0 — Splash Screen
 if ss.step == 0:
-    # Use st.columns to center splash content vertically and horizontally
-    # Center the splash using CSS instead for full screen control
     splash_bg_path = "assets/splash_background.jpg"
     splash_bg_data_url = data_url(splash_bg_path)
     logo_data_url = data_url("assets/bello_logo.png")
-
-    # Inject CSS for splash screen background and centering
-    st.markdown(f"""
-    <style>
-        /* Hide default Streamlit elements during splash */
-        .block-container {{ padding: 0 !important; margin: 0 !important; max-width: none !important; }}
-        header[data-testid="stHeader"], footer {{ display: none !important; }}
-        /* Make body full height for vertical centering */
-        html, body, #root {{ height: 100%; margin: 0; }}
-        /* Target the specific container holding the splash content - needs careful inspection in browser dev tools */
-        /* Using a more general approach targeting the direct child of root */
-        #root > div:first-child {{
-             height: 100vh; /* Full viewport height */
-             display: flex;
-             justify-content: center;
-             align-items: center;
-             background-image: url('{splash_bg_data_url if splash_bg_data_url else ""}');
-             background-size: cover;
-             background-position: center;
-        }}
-         /* Ensure main container doesn't interfere */
-        .main-container {{ max-width: none !important; margin: 0 !important; padding: 0 !important; }}
-
-        .splash-logo {{
-            max-width: 250px; /* Adjust size as needed */
-            animation: fadeIn 1.5s ease-in-out;
-        }}
-        @keyframes fadeIn {{
-            from {{ opacity: 0; transform: scale(0.9); }}
-            to {{ opacity: 1; transform: scale(1); }}
-        }}
-    </style>
-    """, unsafe_allow_html=True)
-
-    # Display splash logo (already centered by parent's flexbox)
-    if logo_data_url:
-        st.markdown(f'<img src="{logo_data_url}" class="splash-logo">', unsafe_allow_html=True)
-    else:
-        st.markdown("<h1 style='color: #2d6a4f; animation: fadeIn 1.5s ease-in-out;'>Bello Foyer</h1>", unsafe_allow_html=True) # Fallback text
-
-    # Simulate loading and transition
+    st.markdown(f""" <style> /* Hide default Streamlit UI */ .block-container {{ padding: 0 !important; margin: 0 !important; max-width: none !important; }} header, footer {{ display: none !important; }} #root > div:first-child {{ height: 100vh; display: flex; justify-content: center; align-items: center; background-image: url('{splash_bg_data_url or ""}'); background-size: cover; background-position: center; }} .splash-logo {{ max-width: 250px; animation: fadeIn 1.5s ease-in-out; }} @keyframes fadeIn {{ from {{ opacity: 0; transform: scale(0.9); }} to {{ opacity: 1; transform: scale(1); }} }} </style> """, unsafe_allow_html=True)
+    if logo_data_url: st.markdown(f'<img src="{logo_data_url}" class="splash-logo">', unsafe_allow_html=True)
+    else: st.markdown("<h1 style='color: #2d6a4f;'>Bello Foyer</h1>", unsafe_allow_html=True)
     time.sleep(2); ss.step = 1; st.rerun()
 
-
 # --- All other steps go inside the main_container ---
-# Use 'else' block to ensure container wraps steps 1 onwards
 else:
     # Step 1 — Welcome
     if ss.step == 1:
-        # --- Header using st.columns ---
-        col_logo, col_title, col_menu_btn = st.columns([1, 4, 1])
-        with col_logo:
-            logo_data = data_url("assets/bello_logo.png")
-            if logo_data:
-                st.image("assets/bello_logo.png", width=100) # Use st.image for consistency
-        with col_title:
-             # Add vertical space using markdown or empty columns if needed
-             st.markdown("<h3 class='header-title-st'>Bello Foyer</h3>", unsafe_allow_html=True)
-        with col_menu_btn:
-            # Placeholder for menu button - styling handled in CSS
-            # We use a button to potentially trigger a sidebar later if needed
-             if st.button("☰", key="menu_button"):
-                  st.sidebar.title("Menu")
-                  st.sidebar.page_link("app.py", label="Home") # Assuming app.py is the main file
-                  st.sidebar.markdown("Catalogue (Not Live)")
-                  st.sidebar.markdown("Contact Us")
-                  # Keep sidebar open requires more complex state or component
-
-        st.markdown("<hr class='header-divider'>", unsafe_allow_html=True) # Visual divider
+        # --- Simple Centered Header for Welcome ---
+        st.markdown("<div class='welcome-header-simple'>", unsafe_allow_html=True)
+        logo_path = "assets/bello_logo.png"
+        if os.path.exists(logo_path):
+            st.image(logo_path, width=120) # Centered by default column behavior
+        # Removed "Bello Foyer" text from here
+        st.markdown("</div>", unsafe_allow_html=True)
 
         # --- Main Welcome Content ---
         col1, col2 = st.columns([1, 1.1])
-        # Define content order for mobile via CSS flex order
         with col1:
              st.markdown("<div class='welcome-text-block'>", unsafe_allow_html=True)
              st.markdown("<h1 class='welcome-headline'>Reimagine Your Space.<br>Instantly.</h1>", unsafe_allow_html=True)
              if st.button("Get Started", type="primary", use_container_width=True): ss.step = 2; st.rerun()
-             st.markdown(""" <p class='welcome-text'> Welcome to Bello Foyer, where design dreams come to life... </p> """, unsafe_allow_html=True)
+             st.markdown("<p class='welcome-text'> Welcome to Bello Foyer...</p>", unsafe_allow_html=True) # Shortened
              st.markdown("</div>", unsafe_allow_html=True)
         with col2:
              st.markdown("<div class='welcome-video-block'>", unsafe_allow_html=True)
@@ -392,17 +223,16 @@ else:
 
     # Steps 2–4 — Visual Quiz
     elif ss.step in [2, 3, 4]:
-        st.markdown("<div class='quiz-container'>", unsafe_allow_html=True)
+        st.markdown("<div class='quiz-container'>", unsafe_allow_html=True) # Add padding container
         visual_quiz = {
-            2: {"title": "Which look do you like better?", "options": {"quiz1_A.jpg": ["minimal", "natural_light"], "quiz1_B.jpg": ["modern", "clean_lines"]}},
-            3: {"title": "Which look do you like better?", "options": {"quiz2_A.jpg": ["boho", "textured"], "quiz2_B.jpg": ["scandi", "light_wood"]}},
-            4: {"title": "Which look do you like better?", "options": {"quiz3_A.jpg": ["industrial", "metal_wood"], "quiz3_B.jpg": ["modern"]}},
+            2: {"title": "Which look do you like better?", "options": {"quiz1_A.jpg": ["minimal"], "quiz1_B.jpg": ["modern"]}}, # Restored full title
+            3: {"title": "Which look do you like better?", "options": {"quiz2_A.jpg": ["boho"], "quiz2_B.jpg": ["scandi"]}},
+            4: {"title": "Which look do you like better?", "options": {"quiz3_A.jpg": ["industrial"], "quiz3_B.jpg": ["modern"]}},
         }
         info = visual_quiz[ss.step]
         st.markdown(f"<p style='text-align:center;'>Getting to know you ({ss.step-1}/3)</p>", unsafe_allow_html=True)
         st.markdown(f"<h2 style='text-align:center;'>{info['title']}</h2>", unsafe_allow_html=True)
-        files = list(info["options"].keys())
-        cols = st.columns(2)
+        files = list(info["options"].keys()); cols = st.columns(2)
         for i, col in enumerate(cols):
             with col:
                 fname = files[i]; p = os.path.join("assets", fname)
@@ -411,26 +241,32 @@ else:
                     st.image(p, use_container_width=True)
                     if st.button("I like this one", key=f"pick_{fname}", use_container_width=True, type="primary"):
                         ss.quiz_choices[ss.step] = info["options"][fname]; ss.step = 5 if ss.step == 4 else ss.step + 1; st.rerun()
-        st.markdown("---")
+        st.markdown("---");
         if st.button("Back", use_container_width=True): ss.step = 1 if ss.step == 2 else ss.step - 1; st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True) # Close padding container
 
     # Step 5 — Redesign Studio
     elif ss.step == 5:
         st.markdown("<h2 style='text-align:center;'>Your Redesign Studio</h2>", unsafe_allow_html=True)
         profile_placeholder = st.empty();
         if "customer_profile" not in ss or not ss.customer_profile:
-            with profile_placeholder, st.spinner("Analyzing style..."):
-                 tags: List[str] = []; [tags.extend(ss.quiz_choices[k]) for k in sorted(ss.quiz_choices.keys()) if ss.quiz_choices[k]]
-                 ss.customer_profile = generate_customer_profile(tags or ["modern"])
-        profile_placeholder.empty()
-        if ss.customer_profile:
-            with st.expander("Your AI-Generated Design Profile", expanded=True): st.markdown(ss.customer_profile)
-        else: st.warning("Profile not generated."); ss.customer_profile = "Modern style."
+             with profile_placeholder, st.spinner("Analyzing style..."):
+                  tags: List[str] = []; [tags.extend(ss.quiz_choices[k]) for k in sorted(ss.quiz_choices.keys()) if ss.quiz_choices[k]]
+                  ss.customer_profile = generate_customer_profile(tags or ["modern"])
+        profile_placeholder.empty() # Clear placeholder regardless
+
+        # Only display expander if profile was successfully generated (is not None and not default fallback)
+        if ss.customer_profile and "(Default due to error)" not in ss.customer_profile and "Could not generate profile" not in ss.customer_profile:
+             with st.expander("Your AI-Generated Design Profile", expanded=True): st.markdown(ss.customer_profile)
+        elif ss.customer_profile: # Show generated profile even if it's the fallback
+             st.info(ss.customer_profile) # Use info box for default/error profiles
+        else: # Handle case where generation failed completely
+             st.warning("Could not generate design profile. Using default style: Modern."); ss.customer_profile = "Modern style."
+
         st.markdown("---"); st.markdown("<h3 style='text-align:center;'>Let's Transform Your Room</h3>", unsafe_allow_html=True)
         col_upload, col_cam = st.columns(2)
         with col_upload: uploaded_file = st.file_uploader("Upload Now", type=["jpg", "png", "webp"])
-        with col_cam: camera_file = st.camera_input("Open Camera")
+        with col_cam: camera_file = st.camera_input("Open Camera") # Camera widget rendered here
         input_file = camera_file if camera_file is not None else uploaded_file
         if input_file: ss.uploaded_file = input_file
         if ss.uploaded_file:
@@ -540,30 +376,21 @@ else:
         /* Splash screen styles */
         /* (Splash CSS remains the same) */
 
-        /* Top bar using st.columns - simplified */
-        div[data-testid="stHorizontalBlock"] {{ /* Target column container */
-            align-items: center;
+        /* --- Welcome Screen Header (Step 1) --- */
+        .welcome-header-simple {{
+            text-align: center; /* Center logo */
+            margin-bottom: 2rem; /* Space below logo */
+            padding-top: 1rem; /* Space above logo */
         }}
-        .logo-img {{ height: 35px; width: auto; display: block; }} /* Control logo size */
-        .header-title-st {{ /* Style for the st.markdown title */
-            text-align: center; color: #2d6a4f; font-size: 1.4rem; font-weight: bold; margin: 0; padding: 0;
-        }}
-        /* Style the menu button */
-        div[data-testid="stButton"] button[key="menu_button"] {{
-             background: #2d6a4f; color: white; border: none; border-radius: 50%;
-             width: 35px; height: 35px; padding: 0; line-height: 35px; text-align: center;
-             margin-left: auto; /* Push to right */
-        }}
-         .header-divider {{ border-top: 1px solid #eee; margin-top: 0.5rem; margin-bottom: 2rem; }}
 
-        /* Welcome screen content styles */
+        /* --- Welcome Screen Content (Step 1) --- */
         .welcome-content {{ margin-top: 1rem; }}
         .welcome-headline {{ font-size: 2.2rem; margin-bottom: 1.5rem; line-height: 1.2; text-align: left; }}
         .welcome-text {{ font-size: 1rem; color: #495057; margin-top: 1.5rem; }}
         .welcome-content .stButton {{ margin-top: 1rem; margin-bottom: 1rem; }}
 
-        /* Quiz container padding */
-        .quiz-container {{ padding-top: 2rem; }}
+        /* --- Quiz Container Padding (Steps 2-4) --- */
+        .quiz-container {{ padding-top: 2rem; }} /* Add space from top */
 
         /* Results screen styles */
         .image-description {{ text-align: center; font-style: italic; color: #555; margin: 0.5rem 1rem 1.5rem 1rem; }}
@@ -572,19 +399,20 @@ else:
         .shop-item-line {{ display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0; border-bottom: 1px solid #eee; }}
         .item-name {{ flex-grow: 1; margin-right: 1rem; }} .item-price {{ font-weight: bold; white-space: nowrap; }}
 
-        /* Responsive styles */
+        /* --- Responsive Design for Mobile --- */
         @media (max-width: 768px) {{
             .main-container {{ padding: {'0' if ss.step == 0 else '1rem 0.5rem'}; }} /* Tighter mobile padding */
-            .header-title-st {{ font-size: 1.1rem; }}
-            .logo-img {{ height: 30px; }}
-            div[data-testid="stButton"] button[key="menu_button"] {{ width: 30px; height: 30px; line-height: 30px; }}
-
+            .welcome-header-simple img {{ width: 100px; }} /* Adjust logo size on mobile */
             .welcome-headline {{ font-size: 1.8rem; text-align: center; }}
             .welcome-text {{ font-size: 0.9rem; text-align: center; margin-bottom: 1rem; margin-top: 0; }}
-             /* Mobile stacking order using CSS flex order */
-            div.welcome-content > div[data-testid="stHorizontalBlock"] {{ flex-direction: column !important; }} /* Force column */
-            div.welcome-content > div[data-testid="stHorizontalBlock"] > div:nth-child(1) {{ order: 2; width: 100% !important; margin-top: 1.5rem; }} /* Text block */
-            div.welcome-content > div[data-testid="stHorizontalBlock"] > div:nth-child(2) {{ order: 1; width: 100% !important; }} /* Video */
+             /* Mobile stacking order for Welcome Screen */
+             /* Target the direct children columns container */
+             .main-container > div > div > div > div[data-testid="stHorizontalBlock"] {{
+                 flex-direction: column !important; /* Force column */
+             }}
+             /* Use specific class selectors if possible, otherwise rely on structure */
+             .welcome-text-block {{ order: 1; width: 100% !important; }}
+             .welcome-video-block {{ order: 2; width: 100% !important; margin-top: 1.5rem; }}
 
             .quiz-container {{ padding-top: 1rem; }}
             .shop-item-line {{ padding: 0.7rem 0; }}
