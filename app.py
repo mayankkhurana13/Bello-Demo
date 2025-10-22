@@ -107,7 +107,9 @@ def generate_customer_profile(style_tags: List[str]) -> str:
         message = resp.choices[0].message
         return message.content.strip() if message and message.content else "Could not generate profile content."
     except Exception as e:
-        st.error(f"Profile Generation Error: {e}")
+        # Avoid showing Streamlit error directly in cached function
+        # Log error instead (e.g., import logging; logging.error(...))
+        print(f"Profile Generation Error: {e}")
         return "Your design profile suggests a love for calm, modern spaces. (Default due to error)"
 
 @st.cache_data
@@ -131,7 +133,7 @@ def analyze_room_architecture(image_bytes: bytes) -> str:
         message = resp.choices[0].message
         return message.content.strip() if message and message.content else "Could not analyze room features."
     except Exception as e:
-        st.error(f"Room Analysis Error: {e}")
+        print(f"Room Analysis Error: {e}")
         return "Analysis unavailable. Assuming a standard living room with windows and neutral walls."
 
 @st.cache_data
@@ -163,7 +165,7 @@ def create_design_brief(profile: str, scene_report: str) -> str:
         )
         return brief
     except Exception as e:
-        st.error(f"Design Brief Error: {e}")
+        print(f"Design Brief Error: {e}")
         return (
             "A photorealistic professional photograph of a modern, calm living room with soft natural light, "
             "matching the user's taste. Ensure architecture remains identical."
@@ -193,12 +195,12 @@ def edit_room_image_with_brief(processed_png_bytes: bytes, brief: str) -> str:
         url = getattr(edit.data[0], "url", None)
         if url:
              return url
-        # Added check for b64_json as a potential response format
         b64 = getattr(edit.data[0], "b64_json", None)
         if b64:
              return "data:image/png;base64," + b64
         raise RuntimeError("Image API returned neither URL nor b64_json (edit).")
     except Exception as e:
+        # Raise the specific error for handling in the calling step
         raise RuntimeError(f"Image generation failed: {e}") from e
 
 def preprocess_to_square_png(image_bytes: bytes) -> bytes:
@@ -223,24 +225,18 @@ def preprocess_to_square_png(image_bytes: bytes) -> bytes:
 @st.cache_data(show_spinner="Describing image...")
 def describe_image_content(image_url: str) -> str:
     """Uses AI to provide a concise 2-3 line description of the image content."""
-    if not image_url:
-        return "No image to describe."
+    if not image_url: return "No image to describe."
     try:
-        if image_url.startswith("data:image"):
-             image_input = {"url": image_url}
-        else:
-             image_input = {"url": image_url}
+        image_input = {"url": image_url} # Works for both data and regular URLs with GPT-4o
         prompt = "Describe the interior design in this image in 2-3 concise sentences. Focus on furniture, decor, and overall style."
         response = client.chat.completions.create(
             model="gpt-4o",
-            messages=[{
-                "role": "user", "content": [ {"type": "text", "text": prompt}, {"type": "image_url", "image_url": image_input} ]
-            }],
+            messages=[{"role": "user", "content": [ {"type": "text", "text": prompt}, {"type": "image_url", "image_url": image_input} ]}],
             max_tokens=100
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
-        st.error(f"Image description failed: {e}")
+        print(f"Image description failed: {e}")
         return "A beautiful AI-styled room with a modern touch."
 
 @st.cache_data(show_spinner="Identifying products...")
@@ -278,7 +274,7 @@ def recognize_products_in_image(image_url: str) -> List[Dict[str, Any]]:
                 except (ValueError, TypeError): continue
         return final_products
     except Exception as e:
-        st.error(f"AI Product Recognition Failed: {e}")
+        print(f"AI Product Recognition Failed: {e}")
         return [ {"id": 1, "name": "Modern Sectional Sofa", "price": random.randint(35000, 85000)}, {"id": 2, "name": "Textured Area Rug", "price": random.randint(7000, 22000)}, {"id": 3, "name": "Floor Lamp", "price": random.randint(3000, 9000)}]
 
 # --------------------- Session ---------------------
@@ -295,26 +291,24 @@ if "step" not in ss:
     ss.image_description = None
 
 # --------------------- Main App Container ---------------------
-st.markdown(f'<div class="main-container {"splash" if ss.step == 0 else ""}">', unsafe_allow_html=True)
+# Apply container only after splash
+if ss.step != 0:
+    st.markdown('<div class="main-container">', unsafe_allow_html=True)
 
 # --------------------- UI ---------------------
 
 # Step 0 — Splash Screen
 if ss.step == 0:
-    # (Splash screen code remains the same)
     splash_bg_path = "assets/splash_background.jpg"
     splash_bg_data_url = data_url(splash_bg_path)
     logo_data_url = data_url("assets/bello_logo.png")
-    st.markdown(f""" <style> /* Hide default Streamlit elements during splash */ .block-container {{ padding: 0 !important; }} header[data-testid="stHeader"] {{ display: none !important; }} .main-container.splash {{ max-width: none !important; margin: 0 !important; padding: 0 !important; }} .splash-screen {{ position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: center; background-image: url('{splash_bg_data_url if splash_bg_data_url else ""}'); background-size: cover; background-position: center; z-index: 9999; }} .splash-logo {{ max-width: 250px; animation: fadeIn 1.5s ease-in-out; }} @keyframes fadeIn {{ from {{ opacity: 0; transform: scale(0.9); }} to {{ opacity: 1; transform: scale(1); }} }} </style> """, unsafe_allow_html=True)
+    st.markdown(f""" <style> /* Hide default Streamlit elements during splash */ .block-container {{ padding: 0 !important; margin: 0 !important; max-width: none !important; }} header[data-testid="stHeader"], footer {{ display: none !important; }} .main-container {{ max-width: none !important; margin: 0 !important; padding: 0 !important; }} .splash-screen {{ position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: center; background-image: url('{splash_bg_data_url if splash_bg_data_url else ""}'); background-size: cover; background-position: center; z-index: 9999; }} .splash-logo {{ max-width: 250px; animation: fadeIn 1.5s ease-in-out; }} @keyframes fadeIn {{ from {{ opacity: 0; transform: scale(0.9); }} to {{ opacity: 1; transform: scale(1); }} }} </style> """, unsafe_allow_html=True)
     if logo_data_url: st.markdown(f""" <div class="splash-screen"> <img src="{logo_data_url}" class="splash-logo"> </div> """, unsafe_allow_html=True)
-    else: st.markdown("<div class='splash-screen'><h1 style='color: white; animation: fadeIn 1.5s ease-in-out;'>Bello Foyer</h1></div>", unsafe_allow_html=True)
-    time.sleep(2)
-    ss.step = 1
-    st.rerun()
+    else: st.markdown("<div class='splash-screen'><h1 style='color: white;'>Bello Foyer</h1></div>", unsafe_allow_html=True)
+    time.sleep(2); ss.step = 1; st.rerun()
 
 # Step 1 — Welcome
 elif ss.step == 1:
-    # (Welcome screen code remains the same)
     st.markdown(f""" <div class="top-bar"> <div class="logo-container"> <img src="{data_url("assets/bello_logo.png")}" class="logo-img"> </div> <h3 class="header-title">Bello Foyer</h3> <div class="menu-wrap"> <input type="checkbox" class="toggler"> <div class="hamburger"><div></div></div> <div class="menu"> <div> <div> <ul> <li><a href="#">Home</a></li> <li><a href="#">Catalogue (Not Live)</a></li> <li><a href="#">Contact Us</a></li> </ul> </div> </div> </div> </div> </div> """, unsafe_allow_html=True)
     st.markdown("<div class='welcome-content'>", unsafe_allow_html=True)
     col1, col2 = st.columns([1, 1.1])
@@ -322,14 +316,17 @@ elif ss.step == 1:
     with col2:
         st.markdown("<h1 class='welcome-headline'>Reimagine Your Space.<br>Instantly.</h1>", unsafe_allow_html=True)
         if st.button("Get Started", type="primary", use_container_width=True): ss.step = 2; st.rerun()
-        st.markdown(""" <p class='welcome-text'> Welcome to Bello Foyer... </p> """, unsafe_allow_html=True) # Shortened for brevity
+        st.markdown(""" <p class='welcome-text'> Welcome to Bello Foyer... </p> """, unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
-
 
 # Steps 2–4 — Visual Quiz
 elif ss.step in [2, 3, 4]:
-    # (Visual quiz code remains the same)
-    visual_quiz = { 2: {"title": "Which look?", "options": {"quiz1_A.jpg": ["minimal"], "quiz1_B.jpg": ["modern"]}}, 3: {"title": "Which look?", "options": {"quiz2_A.jpg": ["boho"], "quiz2_B.jpg": ["scandi"]}}, 4: {"title": "Which look?", "options": {"quiz3_A.jpg": ["industrial"], "quiz3_B.jpg": ["modern"]}}} # Shortened
+    st.markdown("<div class='quiz-container'>", unsafe_allow_html=True) # Add container for padding
+    visual_quiz = {
+        2: {"title": "Which look do you like better?", "options": {"quiz1_A.jpg": ["minimal", "natural_light"], "quiz1_B.jpg": ["modern", "clean_lines"]}},
+        3: {"title": "Which look do you like better?", "options": {"quiz2_A.jpg": ["boho", "textured"], "quiz2_B.jpg": ["scandi", "light_wood"]}},
+        4: {"title": "Which look do you like better?", "options": {"quiz3_A.jpg": ["industrial", "metal_wood"], "quiz3_B.jpg": ["modern"]}},
+    }
     info = visual_quiz[ss.step]
     st.markdown(f"<p style='text-align:center;'>Getting to know you ({ss.step-1}/3)</p>", unsafe_allow_html=True)
     st.markdown(f"<h2 style='text-align:center;'>{info['title']}</h2>", unsafe_allow_html=True)
@@ -345,115 +342,78 @@ elif ss.step in [2, 3, 4]:
                     ss.quiz_choices[ss.step] = info["options"][fname]; ss.step = 5 if ss.step == 4 else ss.step + 1; st.rerun()
     st.markdown("---")
     if st.button("Back", use_container_width=True): ss.step = 1 if ss.step == 2 else ss.step - 1; st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True) # Close quiz container
 
-
-# Step 5 — Redesign Studio (profile + upload + run button)
+# Step 5 — Redesign Studio
 elif ss.step == 5:
     st.markdown("<h2 style='text-align:center;'>Your Redesign Studio</h2>", unsafe_allow_html=True)
-
-    profile_placeholder = st.empty(); profile_placeholder.info("Analyzing your style...")
+    profile_placeholder = st.empty(); profile_placeholder.info("Analyzing style...")
     if "customer_profile" not in ss or not ss.customer_profile:
         tags: List[str] = []; [tags.extend(ss.quiz_choices[k]) for k in sorted(ss.quiz_choices.keys()) if ss.quiz_choices[k]]
-        ss.customer_profile = generate_customer_profile(tags or ["modern"]) # Shortened
+        ss.customer_profile = generate_customer_profile(tags or ["modern"])
     profile_placeholder.empty()
-
-    with st.expander("Your AI-Generated Design Profile", expanded=True): st.markdown(ss.customer_profile or "...")
+    # Check if profile is not None before displaying
+    if ss.customer_profile:
+        with st.expander("Your AI-Generated Design Profile", expanded=True): st.markdown(ss.customer_profile)
+    else:
+        st.warning("Could not generate design profile. Using default settings.")
+        ss.customer_profile = "A beautiful modern style." # Provide a default if generation failed
 
     st.markdown("---"); st.markdown("<h3 style='text-align:center;'>Let's Transform Your Room</h3>", unsafe_allow_html=True)
-
     col_upload, col_cam = st.columns(2)
-    with col_upload: uploaded_file = st.file_uploader("Upload Now", type=["jpg", "png", "webp"], label_visibility="visible") # Shortened
+    with col_upload: uploaded_file = st.file_uploader("Upload Now", type=["jpg", "png", "webp"])
     with col_cam: camera_file = st.camera_input("Open Camera")
-
     input_file = camera_file if camera_file is not None else uploaded_file
     if input_file: ss.uploaded_file = input_file
-
     if ss.uploaded_file:
         st.image(ss.uploaded_file, caption="Your room", use_container_width=True)
-        # Button transitions to the processing step
         if st.button("Redesign My Room", type="primary", use_container_width=True):
-            ss.last_error = None; ss.image_description = None; ss.styled_image_url = None # Clear previous results
-            ss.step = 5.5 # Go to processing
-            st.rerun()
-
+            ss.last_error = None; ss.image_description = None; ss.styled_image_url = None
+            ss.step = 5.5; st.rerun()
     st.markdown("---")
     if st.button("Back"): ss.step = 4; st.rerun()
 
-
-# Step 5.5 - Processing Screen (NEW)
+# Step 5.5 - Processing Screen
 elif ss.step == 5.5:
     st.markdown("<h2 style='text-align:center;'>Creating Your Design...</h2>", unsafe_allow_html=True)
-    if ss.uploaded_file:
-        st.image(ss.uploaded_file, caption="Processing your room", use_column_width=True) # Show original image
+    if ss.uploaded_file: st.image(ss.uploaded_file, caption="Processing...", use_container_width=True)
     st.markdown("---")
-
-    # Placeholder for status messages or spinners
     status_placeholder = st.empty()
-
     try:
-        if not ss.uploaded_file:
-             raise ValueError("No file uploaded to process.")
+        if not ss.uploaded_file: raise ValueError("No file uploaded.")
         img_bytes = ss.uploaded_file.getvalue()
-
-        # Run AI steps sequentially with individual spinners shown via status_placeholder
-        status_placeholder.info("⏳ Analyzing room architecture...")
-        scene = analyze_room_architecture(img_bytes)
-
-        status_placeholder.info("🎨 Creating design brief...")
-        if not ss.customer_profile: # Ensure profile exists
-            tags: List[str] = []; [tags.extend(ss.quiz_choices[k]) for k in sorted(ss.quiz_choices.keys()) if ss.quiz_choices[k]]
-            ss.customer_profile = generate_customer_profile(tags or ["modern"])
+        status_placeholder.info("⏳ Analyzing room..."); scene = analyze_room_architecture(img_bytes)
+        status_placeholder.info("🎨 Creating brief...");
+        if not ss.customer_profile: # Regenerate profile if somehow missing
+             tags: List[str] = []; [tags.extend(ss.quiz_choices[k]) for k in sorted(ss.quiz_choices.keys()) if ss.quiz_choices[k]]
+             ss.customer_profile = generate_customer_profile(tags or ["modern"])
         brief = create_design_brief(ss.customer_profile, scene)
-
-        status_placeholder.info("🖼️ Preprocessing image...")
-        png_bytes = preprocess_to_square_png(img_bytes)
-
-        # Optional Mask Preview (keep commented out unless debugging)
-        # mask_preview = Image.open(io.BytesIO(make_architecture_preserving_mask((1024, 1024))))
-        # st.image(mask_preview, caption="Mask Preview", use_container_width=True)
-
-        status_placeholder.info("✨ Generating redesigned image... This might take a minute.")
-        ss.styled_image_url = edit_room_image_with_brief(png_bytes, brief)
-
-        # Success - Move to results
-        status_placeholder.success("✅ Design Complete!")
-        time.sleep(1) # Brief pause before showing results
-        ss.last_error = None
-        ss.step = 6
-        st.rerun()
-
+        status_placeholder.info("🖼️ Preprocessing..."); png_bytes = preprocess_to_square_png(img_bytes)
+        status_placeholder.info("✨ Generating design..."); ss.styled_image_url = edit_room_image_with_brief(png_bytes, brief)
+        status_placeholder.success("✅ Done!"); time.sleep(1)
+        ss.last_error = None; ss.step = 6; st.rerun()
     except Exception as e:
-        # Error - Store it and move to results page to display
-        ss.last_error = str(e)
-        ss.styled_image_url = None # Ensure no stale image is shown
-        ss.step = 6
-        st.rerun() # Rerun to show error on results page
-
+        ss.last_error = str(e); ss.styled_image_url = None; ss.step = 6; st.rerun()
 
 # Step 6 — Results
 elif ss.step == 6:
     st.markdown("<h2 style='text-align:center;'>Your AI-Styled Home</h2>", unsafe_allow_html=True)
-
     if ss.styled_image_url:
         st.image(ss.styled_image_url, use_container_width=True)
-        if "image_description" not in ss or not ss.image_description:
-            ss.image_description = describe_image_content(ss.styled_image_url)
+        if "image_description" not in ss or not ss.image_description: ss.image_description = describe_image_content(ss.styled_image_url)
         st.markdown(f"<p class='image-description'>{ss.image_description}</p>", unsafe_allow_html=True)
-    else:
-        st.error(f"Image generation failed: {ss.last_error or 'Unknown reason'}")
-
+    else: st.error(f"Failed: {ss.last_error or 'Unknown'}")
     st.markdown("---")
-    st.markdown("<h5 style='margin-bottom: 0.5rem;'>Suggest Changes:</h5>", unsafe_allow_html=True)
-    st.text_input("Suggest changes", placeholder="e.g., 'Make the rug blue'", label_visibility="collapsed", disabled=True)
-    st.caption("_(Live editing feature coming soon!)_")
+    st.markdown("<h5>Suggest Changes:</h5>", unsafe_allow_html=True)
+    st.text_input("Suggest changes", placeholder="e.g., 'Make rug blue'", label_visibility="collapsed", disabled=True)
+    st.caption("_(Live editing coming soon!)_")
     st.markdown("---")
-
     cL, cR = st.columns(2)
     with cL:
         if st.button("Start Over", use_container_width=True):
             keys = ["step", "quiz_choices", "customer_profile", "uploaded_file", "styled_image_url", "last_error", "shop_items", "buy_now_clicked", "image_description"]
             for k in keys:
-                if k in ss: del ss[k]
+                 if k in ss: del ss[k]
             st.cache_data.clear(); st.rerun()
     with cR:
         shop_disabled = not ss.styled_image_url
@@ -465,15 +425,15 @@ elif ss.step == 6:
 elif ss.step == 7:
     # (Shop the Look code remains largely the same)
     st.markdown("<h2 style='text-align:center;'>Shop the Look</h2>", unsafe_allow_html=True)
-    if not ss.styled_image_url: st.warning("No image available."); st.stop()
+    if not ss.styled_image_url: st.warning("No image."); st.stop()
     st.image(ss.styled_image_url, caption="AI Concept", use_container_width=True)
-    st.markdown("---"); st.markdown("<h4>Items in this look:</h4>", unsafe_allow_html=True)
+    st.markdown("---"); st.markdown("<h4>Items:</h4>", unsafe_allow_html=True)
     if "shop_items" not in ss or not ss.shop_items: ss.shop_items = recognize_products_in_image(ss.styled_image_url)
     if "buy_now_clicked" not in ss: ss.buy_now_clicked = False
     total_price = 0
-    for item in list(ss.shop_items): # Iterate copy
+    for item in list(ss.shop_items):
         col1, col2 = st.columns([0.85, 0.15])
-        with col1: st.markdown(f"<div class='shop-item-line'><span class='item-name'>{item['name']}</span><span class='item-price'>₹{item['price']:,}</span></div>", unsafe_allow_html=True)
+        with col1: st.markdown(f"<div class='shop-item-line'><span>{item['name']}</span><span>₹{item['price']:,}</span></div>", unsafe_allow_html=True)
         with col2:
             if st.button("X", key=f"remove_{item['id']}", help="Remove"):
                 ss.shop_items = [i for i in ss.shop_items if i['id'] != item['id']]; st.rerun()
@@ -481,7 +441,7 @@ elif ss.step == 7:
     st.markdown("---"); st.markdown(f"<h4 style='text-align:right;'>Total: ₹{total_price:,}</h4>", unsafe_allow_html=True)
     buy_now_placeholder = st.empty()
     if ss.buy_now_clicked:
-        buy_now_placeholder.success("Thank you! Our team will contact you shortly.")
+        buy_now_placeholder.success("Thank you! Team will contact you.")
         st.button("Buy Now", type="primary", use_container_width=True, disabled=True, key="buy_now_dis")
     else:
         if buy_now_placeholder.button("Buy Now", type="primary", use_container_width=True, disabled=(total_price == 0), key="buy_now_act"):
@@ -498,35 +458,66 @@ elif ss.step == 7:
                  if k in ss: del ss[k]
             st.cache_data.clear(); st.rerun()
 
-
 # --------------------- Custom CSS for Layout and Style ---------------------
-# (CSS truncated for brevity, assume previous styles are included)
 st.markdown(f"""
 <style>
     /* Base styles */
     body {{ background:#fff8f9; font-family: 'Inter', sans-serif; margin: 0; }}
-    .block-container {{ padding: {'0' if ss.step == 0 else '1rem'}; }}
-    .main-container {{ max-width: {'none' if ss.step == 0 else '900px'}; margin: auto; padding-top: 0; }}
+    /* Give content breathing room, except splash */
+    .block-container {{ padding: {'0' if ss.step == 0 else '2rem 1rem'}; }}
+    .main-container {{ max-width: {'none' if ss.step == 0 else '900px'}; margin: auto; }}
+    /* Ensure Streamlit headers/footers are hidden when appropriate */
+     header[data-testid="stHeader"], footer {{ display: {'none' if ss.step == 0 else 'block !important'}; }}
+
     /* Splash screen styles */
-    .splash-screen {{ ... }} .splash-logo {{ ... }} @keyframes fadeIn {{ ... }}
+    .splash-screen {{ position: fixed; ... }} .splash-logo {{ ... }} @keyframes fadeIn {{ ... }}
+
     /* Top bar styles */
     .top-bar {{ display: {'flex' if ss.step == 1 else 'none'}; ... }}
-    .logo-img {{ ... }} .header-title {{ ... }} .menu-wrap {{ ... }}
+    .logo-img {{ height: 40px; ... }} .header-title {{ font-size: 1.5rem; ... }} .menu-wrap {{ ... }}
+
     /* Welcome screen styles */
-    .welcome-content {{ ... }} .welcome-headline {{ ... }} .welcome-text {{ ... }}
+    .welcome-content {{ ... }} .welcome-headline {{ font-size: 2.5rem; ... }} .welcome-text {{ ... }}
+
+    /* Quiz container padding */
+    .quiz-container {{ padding-top: 2rem; }}
+
     /* Hamburger menu styles */
     .menu-wrap .toggler {{ ... }} .menu-wrap .hamburger {{ ... }} .menu-wrap .menu {{ ... }}
+
     /* Results screen styles */
-    .image-description {{ ... }}
+    .image-description {{ text-align: center; ... }}
+
     /* Shop the Look styles */
-    .shop-item-line {{ display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0; border-bottom: 1px solid #eee; }}
-    .item-name {{ flex-grow: 1; margin-right: 1rem; }} .item-price {{ font-weight: bold; white-space: nowrap; }}
+    .shop-item-line {{ display: flex; ... }}
+    .item-name {{ ... }} .item-price {{ ... }}
+
     /* Responsive styles */
-    @media (max-width: 768px) {{ ... }}
+    @media (max-width: 768px) {{
+        .block-container {{ padding: {'0' if ss.step == 0 else '1rem'}; }}
+        .header-title {{ font-size: 1.1rem; ... }} .logo-img {{ height: 30px; ... }}
+        .welcome-headline {{ font-size: 1.8rem; ... }} .welcome-text {{ font-size: 0.9rem; ... }}
+        .welcome-content > .st-emotion-cache-1b202tt {{ flex-direction: column !important; }}
+        /* Mobile stacking order fixes */
+        .welcome-content > .st-emotion-cache-1b202tt > div:nth-child(1) {{ order: 2; margin-top: 1.5rem; }} /* Video */
+        .welcome-content > .st-emotion-cache-1b202tt > div:nth-child(2) {{ order: 1; }} /* Text block */
+        .welcome-content > .st-emotion-cache-1b202tt > div:nth-child(2) > .welcome-headline {{ order: 1; }}
+        .welcome-content > .st-emotion-cache-1b202tt > div:nth-child(2) > .stButton {{ order: 2; }}
+        .welcome-content > .st-emotion-cache-1b202tt > div:nth-child(2) > .welcome-text {{ order: 3; }}
+        .quiz-container {{ padding-top: 1rem; }}
+         /* Shop item mobile layout */
+        .shop-item-line {{ padding: 0.7rem 0; }} /* More space */
+        .stButton>button[key*="remove_"] {{ padding: 0.1rem 0.4rem; font-size: 1rem; }} /* Smaller remove button */
+    }}
+
     /* Button Styles */
-    .stButton>button {{ background:#2d6a4f; ... }}
-    .stButton>button:hover {{ ... }} .stButton>button:disabled {{ ... }}
-    .stButton>button[kind="secondary"] {{ ... }} .stButton>button[key*="remove_"] {{ ... }}
+    .stButton>button {{ background:#2d6a4f; border-radius: 8px; ... }} /* Slightly smaller radius */
+    .stButton>button:hover {{ background: #1e4934; ... }} .stButton>button:disabled {{ background: #adb5bd; ... }}
+    .stButton>button[kind="secondary"] {{ background:#e9ecef; ... }}
+    .stButton>button[key*="remove_"] {{ background: none; color: #dc3545; ... }}
+    /* Remove focus outline/border */
+    .stButton>button:focus {{ outline: none !important; box-shadow: none !important; border: none !important; }}
+
 </style>
 """, unsafe_allow_html=True)
 
